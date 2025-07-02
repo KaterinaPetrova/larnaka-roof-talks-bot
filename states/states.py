@@ -1,0 +1,73 @@
+from aiogram.fsm.state import State, StatesGroup
+
+class StartState(StatesGroup):
+    """States for the start menu."""
+    waiting_for_action = State()
+
+class RegistrationState(StatesGroup):
+    """States for the registration process."""
+    waiting_for_event = State()
+    waiting_for_role = State()
+    waiting_for_first_name = State()
+    waiting_for_last_name = State()
+    waiting_for_topic = State()
+    waiting_for_description = State()
+    waiting_for_presentation = State()
+    waiting_for_payment = State()
+    waiting_for_comments = State()
+    confirmation = State()
+
+class WaitlistState(StatesGroup):
+    """States for the waitlist process."""
+    waiting_for_confirmation = State()
+    waiting_for_first_name = State()
+    waiting_for_last_name = State()
+    waiting_for_topic = State()
+    waiting_for_description = State()
+    waiting_for_presentation = State()
+    waiting_for_comments = State()
+    confirmation = State()
+
+class MyEventsState(StatesGroup):
+    """States for managing user's events."""
+    waiting_for_event = State()
+    waiting_for_action = State()
+
+class EditTalkState(StatesGroup):
+    """States for editing a talk."""
+    waiting_for_field = State()
+    waiting_for_topic = State()
+    waiting_for_description = State()
+    waiting_for_presentation = State()
+    confirmation = State()
+
+class CancelRegistrationState(StatesGroup):
+    """States for cancelling a registration."""
+    waiting_for_confirmation = State()
+
+class AdminState(StatesGroup):
+    """States for admin actions."""
+    waiting_for_action = State()
+    waiting_for_event = State()
+    waiting_for_role = State()
+    waiting_for_user = State()
+    waiting_for_message = State()
+    confirmation = State()
+
+class AdminAddUserState(StatesGroup):
+    """States for admin adding a user."""
+    waiting_for_event = State()
+    waiting_for_role = State()
+    waiting_for_first_name = State()
+    waiting_for_last_name = State()
+    waiting_for_topic = State()
+    waiting_for_description = State()
+    waiting_for_presentation = State()
+    waiting_for_payment = State()
+    waiting_for_comments = State()
+    confirmation = State()
+
+class WaitlistNotificationState(StatesGroup):
+    """States for waitlist notification process."""
+    waiting_for_response = State()
+    waiting_for_payment = State()
