@@ -34,7 +34,8 @@ from states.states import (
 from text_constants import (
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
-    KEYBOARD_PAYMENT_CONFIRMED
+    KEYBOARD_PAYMENT_CONFIRMED,
+    COMMENTS_REQUEST
 )
 
 # Initialize logger
@@ -72,7 +73,8 @@ async def process_admin_stats(callback: CallbackQuery, state: FSMContext):
     events = await get_open_events()
 
     if not events:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Сейчас нет открытых мероприятий.",
             reply_markup=get_admin_keyboard()
         )
@@ -84,7 +86,8 @@ async def process_admin_stats(callback: CallbackQuery, state: FSMContext):
     await state.update_data(action="stats")
 
     # Send message with events
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Выбери мероприятие:",
         reply_markup=get_admin_events_keyboard(events)
     )
@@ -753,7 +756,7 @@ async def process_admin_add_user_last_name(message: Message, state: FSMContext):
         await state.set_state(AdminAddUserState.waiting_for_comments)
 
         # Ask for comments
-        await message.answer("Введи комментарии (или просто отправь '-', если их нет):")
+        await message.answer(COMMENTS_REQUEST)
 
 # Admin add user topic handler
 @router.message(AdminAddUserState.waiting_for_topic)
@@ -827,7 +830,7 @@ async def process_admin_add_user_payment(message: Message, state: FSMContext):
     await state.set_state(AdminAddUserState.waiting_for_comments)
 
     # Ask for comments
-    await message.answer("Введи комментарии (или просто отправь '-', если их нет):")
+    await message.answer(COMMENTS_REQUEST)
 
 # Admin add user comments handler
 @router.message(AdminAddUserState.waiting_for_comments)

@@ -120,7 +120,7 @@ async def get_open_events(user_id=None):
             is_user_admin = await is_admin(user_id)
 
         # If user is admin or no user_id provided, show all events
-        if is_user_admin:
+        if is_user_admin or user_id is None:
             cursor = await db.execute("SELECT * FROM events WHERE status = 'open' ORDER BY date")
         else:
             # For non-admin users, filter out test events

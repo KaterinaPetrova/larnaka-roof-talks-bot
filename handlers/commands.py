@@ -155,7 +155,8 @@ async def process_register(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationState.waiting_for_event)
 
     # Send message with events
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Доступные мероприятия:",
         reply_markup=get_events_keyboard(events, full_events, full_speaker_events, full_participant_events)
     )
@@ -172,7 +173,8 @@ async def process_my_events(callback: CallbackQuery, state: FSMContext):
     registrations = await get_user_registrations(user_id)
 
     if not registrations:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя пока нет регистраций на мероприятия.",
             reply_markup=get_start_keyboard()
         )
@@ -182,7 +184,8 @@ async def process_my_events(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MyEventsState.waiting_for_event)
 
     # Send message with registrations
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Твои регистрации:",
         reply_markup=get_my_events_keyboard(registrations)
     )
@@ -204,7 +207,8 @@ async def process_help(callback: CallbackQuery):
         "Если у тебя возникли проблемы, напиши организаторам."
     )
 
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         help_text,
         reply_markup=get_start_keyboard()
     )
@@ -222,7 +226,8 @@ async def process_waitlist_event(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     event = await get_event(event_id, user_id)
     if not event:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Мероприятие не найдено.",
             reply_markup=get_start_keyboard()
         )
@@ -265,7 +270,8 @@ async def process_waitlist_event(callback: CallbackQuery, state: FSMContext):
 
     message_text += "\nХочешь попасть в список ожидания?"
 
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         message_text,
         reply_markup=get_waitlist_keyboard(event_id, role)
     )
@@ -282,7 +288,8 @@ async def process_back_to_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(StartState.waiting_for_action)
 
     # Send start message
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Привет! Я бот Larnaka Roof Talks 🌇\n\n"
         "Что хочешь сделать?",
         reply_markup=get_start_keyboard()

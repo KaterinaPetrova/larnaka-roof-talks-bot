@@ -62,7 +62,8 @@ async def process_back_to_my_events(callback: CallbackQuery, state: FSMContext):
     registrations = await get_user_registrations(user_id)
 
     if not registrations:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя пока нет регистраций на мероприятия.",
             reply_markup=get_start_keyboard()
         )
@@ -75,7 +76,8 @@ async def process_back_to_my_events(callback: CallbackQuery, state: FSMContext):
     await state.set_state(MyEventsState.waiting_for_event)
 
     # Send message with registrations
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Твои регистрации:",
         reply_markup=get_my_events_keyboard(registrations)
     )
@@ -94,7 +96,8 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
         waitlist_entry = await get_waitlist_entry(waitlist_id)
 
         if not waitlist_entry:
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 "Ошибка: запись в листе ожидания не найдена.",
                 reply_markup=get_start_keyboard()
             )
@@ -103,7 +106,8 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
 
         # Check if the waitlist entry is still active or notified
         if waitlist_entry["status"] not in ["active", "notified"]:
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 "Это приглашение больше не действительно.",
                 reply_markup=get_start_keyboard()
             )
@@ -848,10 +852,10 @@ async def process_new_description(message: Message, state: FSMContext):
         reply_markup=get_my_events_keyboard(registrations)
     )
 
-# Process new presentation status
+# Process new presentation status (text message)
 @router.message(EditTalkState.waiting_for_presentation)
 async def process_new_presentation(message: Message, state: FSMContext):
-    """Process new presentation status input."""
+    """Process new presentation status input via text message."""
     # Get data from state
     data = await state.get_data()
     registration_id = data.get("registration_id")
@@ -863,7 +867,8 @@ async def process_new_presentation(message: Message, state: FSMContext):
     text = message.text.strip().lower()
     if text not in ["да", "нет"]:
         await message.answer(
-            "Пожалуйста, ответь 'Да' или 'Нет':"
+            "Пожалуйста, ответь 'Да' или 'Нет':",
+            reply_markup=get_presentation_keyboard()
         )
         return
 
@@ -909,3 +914,62 @@ async def process_new_presentation(message: Message, state: FSMContext):
         "Твои регистрации:",
         reply_markup=get_my_events_keyboard(registrations)
     )
+
+# Process new presentation status (callback query)
+@router.callback_query(EditTalkState.waiting_for_presentation, F.data.startswith("presentation_"))
+async def process_new_presentation_callback(callback: CallbackQuery, state: FSMContext):
+    """Process new presentation status input via callback query."""
+    # Get data from state
+    data = await state.get_data()
+    registration_id = data.get("registration_id")
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    # Extract response from callback data
+    presentation = callback.data.split("_")[1]
+    has_presentation = (presentation == "yes")
+
+    # Update registration
+    await update_registration(registration_id, has_presentation=has_presentation)
+
+    # Send confirmation to user
+    await send_talk_update_confirmation(
+        callback.bot,
+        callback.from_user.id,
+        registration_id,
+        "has_presentation"
+    )
+
+    # Send notification to admin chat
+    registration = await get_registration(registration_id)
+    if registration:
+        user_info = {
+            "first_name": registration["first_name"],
+            "last_name": registration["last_name"],
+            "topic": registration["topic"] if "topic" in registration else None
+        }
+        await send_admin_notification(
+            callback.bot,
+            "update",
+            registration["event_id"],
+            user_info,
+            registration["role"],
+            f"статус презентации: {'Да' if has_presentation else 'Нет'}"
+        )
+
+    # Set state to confirmation
+    await state.set_state(EditTalkState.confirmation)
+
+    # Get user's registrations
+    registrations = await get_user_registrations(callback.from_user.id)
+
+    # Send message with registrations
+    await callback.message.edit_text(
+        "Статус презентации успешно обновлен!\n\n"
+        "Твои регистрации:",
+        reply_markup=get_my_events_keyboard(registrations)
+    )
+
+    # Answer callback query
+    await callback.answer()

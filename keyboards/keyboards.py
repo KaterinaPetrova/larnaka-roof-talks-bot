@@ -93,13 +93,12 @@ def get_yes_no_keyboard(yes_callback, no_callback):
 # Presentation keyboard
 def get_presentation_keyboard():
     """Get keyboard for presentation question."""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=KEYBOARD_YES), KeyboardButton(text=KEYBOARD_NO)]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=KEYBOARD_YES, callback_data="presentation_yes"),
+            InlineKeyboardButton(text=KEYBOARD_NO, callback_data="presentation_no")
+        ]
+    ])
     return keyboard
 
 # Payment confirmation keyboard

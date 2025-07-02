@@ -55,6 +55,7 @@ from text_constants import (
     REGISTRATION_ENTER_DESCRIPTION,
     REGISTRATION_EMPTY_DESCRIPTION,
     REGISTRATION_ENTER_COMMENTS,
+    COMMENTS_REQUEST,
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
     KEYBOARD_PAYMENT_CONFIRMED
@@ -75,7 +76,8 @@ async def process_event_selection(callback: CallbackQuery, state: FSMContext):
 
     # Check if event is open
     if not await is_event_open(event_id):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             REGISTRATION_EVENT_CLOSED,
             reply_markup=get_start_keyboard()
         )
@@ -85,7 +87,8 @@ async def process_event_selection(callback: CallbackQuery, state: FSMContext):
     # Check if user is already registered
     user_id = callback.from_user.id
     if await is_already_registered(user_id, event_id):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             REGISTRATION_ALREADY_REGISTERED,
             reply_markup=get_start_keyboard()
         )
@@ -107,8 +110,9 @@ async def process_event_selection(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationState.waiting_for_role)
 
     # Send role selection keyboard
-    await callback.message.edit_text(
-        REGISTRATION_ROLE_SELECTION,
+    await callback.message.delete()
+    await callback.message.answer(
+        f"{event['title']}. {REGISTRATION_ROLE_SELECTION}",
         reply_markup=get_role_keyboard(event_id, speaker_slots, participant_slots)
     )
 
@@ -125,7 +129,8 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
 
     # Check if there are available slots for this role
     if not await has_available_slots(event_id, role):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             REGISTRATION_NO_SLOTS,
             reply_markup=get_waitlist_keyboard(event_id, role)
         )
@@ -141,7 +146,8 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationState.waiting_for_first_name)
 
     # Ask for first name
-    await callback.message.edit_text(REGISTRATION_ENTER_FIRST_NAME)
+    await callback.message.delete()
+    await callback.message.answer(REGISTRATION_ENTER_FIRST_NAME)
 
     await callback.answer()
 
@@ -194,7 +200,7 @@ async def process_last_name(message: Message, state: FSMContext):
         await state.set_state(RegistrationState.waiting_for_comments)
 
         # Ask for comments
-        await message.answer(REGISTRATION_ENTER_COMMENTS)
+        await message.answer(COMMENTS_REQUEST)
 
 # Topic handler
 @router.message(RegistrationState.waiting_for_topic)
@@ -239,10 +245,10 @@ async def process_description(message: Message, state: FSMContext):
         reply_markup=get_presentation_keyboard()
     )
 
-# Presentation handler
+# Presentation handler (text message)
 @router.message(RegistrationState.waiting_for_presentation)
 async def process_presentation(message: Message, state: FSMContext):
-    """Handle presentation input."""
+    """Handle presentation input via text message."""
     presentation = message.text.strip().lower()
 
     # Validate presentation
@@ -261,7 +267,27 @@ async def process_presentation(message: Message, state: FSMContext):
     await state.set_state(RegistrationState.waiting_for_comments)
 
     # Ask for comments
-    await message.answer("Комментарии (опционально):")
+    await message.answer(COMMENTS_REQUEST)
+
+# Presentation handler (callback query)
+@router.callback_query(RegistrationState.waiting_for_presentation, F.data.startswith("presentation_"))
+async def process_presentation_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle presentation input via callback query."""
+    # Extract response from callback data
+    presentation = callback.data.split("_")[1]
+
+    # Store presentation in state data
+    has_presentation = presentation == "yes"
+    await state.update_data(has_presentation=has_presentation)
+
+    # Set state to waiting for comments
+    await state.set_state(RegistrationState.waiting_for_comments)
+
+    # Ask for comments
+    await callback.message.edit_text(COMMENTS_REQUEST)
+
+    # Answer callback query
+    await callback.answer()
 
 # Payment confirmation handler (text message)
 @router.message(RegistrationState.waiting_for_payment)
@@ -526,7 +552,7 @@ async def process_waitlist_last_name(message: Message, state: FSMContext):
         await state.set_state(WaitlistState.waiting_for_comments)
 
         # Ask for comments
-        await message.answer("Комментарии (опционально):")
+        await message.answer(COMMENTS_REQUEST)
 
 # Waitlist topic handler
 @router.message(WaitlistState.waiting_for_topic)
@@ -571,10 +597,10 @@ async def process_waitlist_description(message: Message, state: FSMContext):
         reply_markup=get_presentation_keyboard()
     )
 
-# Waitlist presentation handler
+# Waitlist presentation handler (text message)
 @router.message(WaitlistState.waiting_for_presentation)
 async def process_waitlist_presentation(message: Message, state: FSMContext):
-    """Handle waitlist presentation input."""
+    """Handle waitlist presentation input via text message."""
     presentation = message.text.strip().lower()
 
     # Validate presentation
@@ -593,7 +619,27 @@ async def process_waitlist_presentation(message: Message, state: FSMContext):
     await state.set_state(WaitlistState.waiting_for_comments)
 
     # Ask for comments
-    await message.answer("Комментарии (опционально):")
+    await message.answer(COMMENTS_REQUEST)
+
+# Waitlist presentation handler (callback query)
+@router.callback_query(WaitlistState.waiting_for_presentation, F.data.startswith("presentation_"))
+async def process_waitlist_presentation_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle waitlist presentation input via callback query."""
+    # Extract response from callback data
+    presentation = callback.data.split("_")[1]
+
+    # Store presentation in state data
+    has_presentation = presentation == "yes"
+    await state.update_data(has_presentation=has_presentation)
+
+    # Skip payment for waitlist and go directly to comments
+    await state.set_state(WaitlistState.waiting_for_comments)
+
+    # Ask for comments
+    await callback.message.edit_text(COMMENTS_REQUEST)
+
+    # Answer callback query
+    await callback.answer()
 
 
 # Waitlist comments handler
