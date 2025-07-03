@@ -63,8 +63,10 @@ async def cmd_my_events(message: Message, state: FSMContext):
     if not registrations:
         await message.answer(
             "У тебя пока нет регистраций на мероприятия.\n"
-            "Используй /start, чтобы зарегистрироваться."
+            "Используй /start, чтобы зарегистрироваться.",
+            reply_markup=get_start_keyboard()
         )
+        await state.set_state(StartState.waiting_for_action)
         return
 
     # Set state to waiting for event

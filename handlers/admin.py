@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from config import BOT_TOKEN, REVOLUT_DONATION_URL
 from utils.notifications import send_admin_notification
+from utils.validation import has_available_slots
 
 from database.db import (
     is_admin,
@@ -424,8 +425,11 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                     # Get the next person from the waitlist
                     next_waitlist = await get_next_from_waitlist(registration["event_id"], registration["role"])
 
-                    # If there's someone on the waitlist, send them a notification
-                    if next_waitlist:
+                    # Check if there are available slots after cancellation
+                    has_slots = await has_available_slots(registration["event_id"], registration["role"])
+
+                    # If there's someone on the waitlist and there are available slots, send them a notification
+                    if next_waitlist and has_slots:
                         await send_waitlist_notification(
                             callback.bot,
                             next_waitlist["user_id"],

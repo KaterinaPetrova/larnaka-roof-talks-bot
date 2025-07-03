@@ -284,7 +284,8 @@ async def process_presentation_callback(callback: CallbackQuery, state: FSMConte
     await state.set_state(RegistrationState.waiting_for_comments)
 
     # Ask for comments
-    await callback.message.edit_text(COMMENTS_REQUEST)
+    await callback.message.delete()
+    await callback.message.answer(COMMENTS_REQUEST)
 
     # Answer callback query
     await callback.answer()
@@ -484,7 +485,8 @@ async def process_waitlist_confirmation(callback: CallbackQuery, state: FSMConte
 
     # Check if user is already on waitlist
     if await is_on_waitlist(event_id, callback.from_user.id, role):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Вы уже в вейт листе.",
             reply_markup=get_start_keyboard()
         )
@@ -499,7 +501,8 @@ async def process_waitlist_confirmation(callback: CallbackQuery, state: FSMConte
     await state.set_state(WaitlistState.waiting_for_first_name)
 
     # Ask for first name
-    await callback.message.edit_text("Введи своё имя:")
+    await callback.message.delete()
+    await callback.message.answer("Введи своё имя:")
 
     await callback.answer()
 
@@ -636,7 +639,8 @@ async def process_waitlist_presentation_callback(callback: CallbackQuery, state:
     await state.set_state(WaitlistState.waiting_for_comments)
 
     # Ask for comments
-    await callback.message.edit_text(COMMENTS_REQUEST)
+    await callback.message.delete()
+    await callback.message.answer(COMMENTS_REQUEST)
 
     # Answer callback query
     await callback.answer()
@@ -732,7 +736,8 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
     await state.set_state(StartState.waiting_for_action)
 
     # Send start message
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Привет! Я бот Larnaka Roof Talks 🌇\n\n"
         "Что хочешь сделать?",
         reply_markup=get_start_keyboard()
@@ -749,7 +754,8 @@ async def process_back_to_events(callback: CallbackQuery, state: FSMContext):
     events = await get_open_events(user_id)
 
     if not events:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Сейчас нет открытых мероприятий. Скоро будут новые!",
             reply_markup=get_start_keyboard()
         )
@@ -762,7 +768,8 @@ async def process_back_to_events(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationState.waiting_for_event)
 
     # Send message with events
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "Доступные мероприятия:",
         reply_markup=get_events_keyboard(events)
     )

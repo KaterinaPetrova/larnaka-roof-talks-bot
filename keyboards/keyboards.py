@@ -125,21 +125,6 @@ def get_my_events_keyboard(registrations):
             )
         ])
 
-        # Add action buttons based on role
-        actions = []
-        if reg["role"] == ROLE_SPEAKER:
-            actions.append(InlineKeyboardButton(
-                text="Изменить доклад", 
-                callback_data=f"edit_talk_{reg['id']}"
-            ))
-
-        actions.append(InlineKeyboardButton(
-            text="Отменить участие", 
-            callback_data=f"cancel_reg_{reg['id']}"
-        ))
-
-        keyboard.inline_keyboard.append(actions)
-
     keyboard.inline_keyboard.append([
         InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")
     ])
@@ -158,6 +143,25 @@ def get_edit_talk_keyboard(registration_id):
     return keyboard
 
 # Cancel registration keyboard
+def get_registration_details_keyboard(registration_id, is_speaker=False):
+    """Get keyboard for registration details."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+
+    if is_speaker:
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(text="Изменить доклад", callback_data=f"edit_talk_{registration_id}")
+        ])
+
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="Отменить участие", callback_data=f"cancel_reg_{registration_id}")
+    ])
+
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_my_events")
+    ])
+
+    return keyboard
+
 def get_cancel_registration_keyboard(registration_id):
     """Get keyboard for cancelling a registration."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[

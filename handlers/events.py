@@ -19,7 +19,8 @@ from keyboards.keyboards import (
     get_edit_talk_keyboard, 
     get_cancel_registration_keyboard,
     get_presentation_keyboard,
-    get_start_keyboard
+    get_start_keyboard,
+    get_registration_details_keyboard
 )
 from states.states import (
     MyEventsState, 
@@ -28,7 +29,7 @@ from states.states import (
     StartState,
     WaitlistNotificationState
 )
-from utils.validation import can_edit_talk, validate_speaker_data
+from utils.validation import can_edit_talk, validate_speaker_data, has_available_slots
 from utils.notifications import (
     send_talk_update_confirmation,
     send_waitlist_notification,
@@ -80,6 +81,68 @@ async def process_back_to_my_events(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "Твои регистрации:",
         reply_markup=get_my_events_keyboard(registrations)
+    )
+
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("view_reg_"))
+async def process_view_registration(callback: CallbackQuery, state: FSMContext):
+    """Handle view registration button click."""
+    # Extract registration_id from callback data
+    registration_id = int(callback.data.split("_")[2])
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.delete()
+        await callback.message.answer(
+            "Регистрация не найдена.",
+            reply_markup=get_start_keyboard()
+        )
+        await state.clear()
+        await state.set_state(StartState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Check if user is the owner of the registration
+    if registration["user_id"] != callback.from_user.id:
+        await callback.message.delete()
+        await callback.message.answer(
+            "У тебя нет прав для просмотра этой регистрации.",
+            reply_markup=get_start_keyboard()
+        )
+        await callback.answer()
+        return
+
+    # Set state to waiting for action
+    await state.update_data(registration_id=registration_id)
+    await state.set_state(MyEventsState.waiting_for_action)
+
+    # Get event details, passing user_id to filter test events for non-admins
+    user_id = callback.from_user.id
+    event = await get_event(registration["event_id"], user_id)
+
+    # Prepare message
+    role_text = "Спикер" if registration["role"] == ROLE_SPEAKER else "Участник"
+    message_text = f"📝 Детали регистрации:\n\n"
+    message_text += f"🗓 Мероприятие: {event['title']}\n"
+    message_text += f"📅 Дата: {event['date']}\n"
+    message_text += f"👤 Роль: {role_text}\n"
+    message_text += f"👤 Имя: {registration['first_name']} {registration['last_name']}\n"
+
+    if registration["role"] == ROLE_SPEAKER and registration.get("topic"):
+        message_text += f"📢 Тема: {registration['topic']}\n"
+        if registration.get("description"):
+            message_text += f"📝 Описание: {registration['description']}\n"
+        message_text += f"📊 Презентация: {'Да' if registration.get('has_presentation') else 'Нет'}\n"
+
+    # Send message with registration details
+    is_speaker = registration["role"] == ROLE_SPEAKER
+    await callback.message.delete()
+    await callback.message.answer(
+        message_text,
+        reply_markup=get_registration_details_keyboard(registration_id, is_speaker)
     )
 
     await callback.answer()
@@ -180,7 +243,8 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
             payment_message = PAYMENT_MESSAGE.format(REVOLUT_DONATION_URL)
 
             from keyboards.keyboards import get_payment_confirmation_keyboard
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 payment_message,
                 reply_markup=get_payment_confirmation_keyboard(),
                 parse_mode="HTML"
@@ -189,7 +253,8 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
             logger.info(f"Participant {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']} - waiting for payment")
     except Exception as e:
         logger.error(f"Error accepting waitlist: {e}")
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Произошла ошибка при подтверждении участия. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
             reply_markup=get_start_keyboard()
         )
@@ -295,7 +360,8 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
         event = data.get("event")
 
         if not waitlist_entry or not waitlist_id or not event:
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 "Произошла ошибка при обработке платежа. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
                 reply_markup=get_start_keyboard()
             )
@@ -350,7 +416,8 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
 
     except Exception as e:
         logger.error(f"Error processing waitlist payment: {e}")
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Произошла ошибка при обработке платежа. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
             reply_markup=get_start_keyboard()
         )
@@ -369,7 +436,8 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
         waitlist_entry = await get_waitlist_entry(waitlist_id)
 
         if not waitlist_entry:
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 "Ошибка: запись в листе ожидания не найдена.",
                 reply_markup=get_start_keyboard()
             )
@@ -378,7 +446,8 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
 
         # Check if the waitlist entry is still active or notified
         if waitlist_entry["status"] not in ["active", "notified"]:
-            await callback.message.edit_text(
+            await callback.message.delete()
+            await callback.message.answer(
                 "Это приглашение больше не действительно.",
                 reply_markup=get_start_keyboard()
             )
@@ -393,7 +462,8 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
         event = await get_event(waitlist_entry["event_id"], user_id)
 
         # Send confirmation message
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             f"Ты отказался(ась) от участия в мероприятии \"{event['title']}\". Спасибо за ответ!",
             reply_markup=get_start_keyboard()
         )
@@ -429,7 +499,8 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
         logger.info(f"User {waitlist_entry['user_id']} declined waitlist spot for event {waitlist_entry['event_id']}")
     except Exception as e:
         logger.error(f"Error declining waitlist: {e}")
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Произошла ошибка при отказе от участия. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
             reply_markup=get_start_keyboard()
         )
@@ -447,7 +518,8 @@ async def process_cancel_registration(callback: CallbackQuery, state: FSMContext
     registration = await get_registration(registration_id)
 
     if not registration:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Регистрация не найдена.",
             reply_markup=get_start_keyboard()
         )
@@ -458,7 +530,8 @@ async def process_cancel_registration(callback: CallbackQuery, state: FSMContext
 
     # Check if user is the owner of the registration
     if registration["user_id"] != callback.from_user.id:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя нет прав для отмены этой регистрации.",
             reply_markup=get_start_keyboard()
         )
@@ -475,7 +548,8 @@ async def process_cancel_registration(callback: CallbackQuery, state: FSMContext
 
     # Send confirmation message
     role_text = "спикера" if registration["role"] == ROLE_SPEAKER else "участника"
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         f"Ты уверен(а), что хочешь отменить регистрацию {role_text} на мероприятие \"{event['title']}\"?",
         reply_markup=get_cancel_registration_keyboard(registration_id)
     )
@@ -493,7 +567,8 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
     registration = await get_registration(registration_id)
 
     if not registration:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Регистрация не найдена.",
             reply_markup=get_start_keyboard()
         )
@@ -504,7 +579,8 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
 
     # Check if user is the owner of the registration
     if registration["user_id"] != callback.from_user.id:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя нет прав для отмены этой регистрации.",
             reply_markup=get_start_keyboard()
         )
@@ -529,7 +605,10 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
         # Check if there's someone on the waitlist
         next_waitlist = await get_next_from_waitlist(registration["event_id"], registration["role"])
 
-        if next_waitlist:
+        # Check if there are available slots after cancellation
+        has_slots = await has_available_slots(registration["event_id"], registration["role"])
+
+        if next_waitlist and has_slots:
             # Update waitlist status
             await update_waitlist_status(next_waitlist["id"], REG_STATUS_ACTIVE)
 
@@ -578,7 +657,8 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error cancelling registration: {e}")
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Произошла ошибка при отмене регистрации. Пожалуйста, попробуй позже.",
             reply_markup=get_start_keyboard()
         )
@@ -594,7 +674,8 @@ async def process_edit_talk(callback: CallbackQuery, state: FSMContext):
 
     # Check if user can edit this talk
     if not await can_edit_talk(callback.from_user.id, registration_id):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя нет прав для редактирования этого доклада.",
             reply_markup=get_start_keyboard()
         )
@@ -605,7 +686,8 @@ async def process_edit_talk(callback: CallbackQuery, state: FSMContext):
     registration = await get_registration(registration_id)
 
     if not registration:
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "Регистрация не найдена.",
             reply_markup=get_start_keyboard()
         )
@@ -623,7 +705,8 @@ async def process_edit_talk(callback: CallbackQuery, state: FSMContext):
     event = await get_event(registration["event_id"], user_id)
 
     # Send message with edit options
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         f"Редактирование доклада для мероприятия \"{event['title']}\".\n"
         f"Выбери, что ты хочешь изменить:",
         reply_markup=get_edit_talk_keyboard(registration_id)
@@ -640,7 +723,8 @@ async def process_edit_topic(callback: CallbackQuery, state: FSMContext):
 
     # Check if user can edit this talk
     if not await can_edit_talk(callback.from_user.id, registration_id):
-        await callback.message.edit_text(
+        await callback.message.delete()
+        await callback.message.answer(
             "У тебя нет прав для редактирования этого доклада.",
             reply_markup=get_start_keyboard()
         )
@@ -655,7 +739,8 @@ async def process_edit_topic(callback: CallbackQuery, state: FSMContext):
     await state.set_state(EditTalkState.waiting_for_topic)
 
     # Send message asking for new topic
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         f"Текущая тема: {registration['topic']}\n\n"
         f"Введи новую тему доклада:",
         reply_markup=None
