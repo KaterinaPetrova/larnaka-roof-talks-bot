@@ -1,5 +1,4 @@
 import logging
-import re
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -357,7 +356,21 @@ async def process_payment(message: Message, state: FSMContext):
         )
 
     except Exception as e:
-        logger.error(f"Error registering user: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "state_data": state_data,
+                "message_text": message.text
+            },
+            user_id=message.from_user.id if message.from_user else None,
+            event_id=state_data.get("event_id"),
+            message="Error registering user"
+        )
+
         await message.answer(
             "Произошла ошибка при регистрации. Пожалуйста, попробуй позже.",
             reply_markup=get_start_keyboard()
@@ -421,7 +434,21 @@ async def process_payment_callback(callback: CallbackQuery, state: FSMContext):
         )
 
     except Exception as e:
-        logger.error(f"Error registering user: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "state_data": state_data,
+                "callback_data": callback.data
+            },
+            user_id=callback.from_user.id if callback.from_user else None,
+            event_id=state_data.get("event_id"),
+            message="Error registering user"
+        )
+
         await callback.message.answer(
             "Произошла ошибка при регистрации. Пожалуйста, попробуй позже.",
             reply_markup=get_start_keyboard()
@@ -724,7 +751,21 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
         await state.clear()
 
     except Exception as e:
-        logger.error(f"Error adding to waitlist: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "state_data": state_data,
+                "message_text": message.text
+            },
+            user_id=message.from_user.id if message.from_user else None,
+            event_id=state_data.get("event_id"),
+            message="Error adding to waitlist"
+        )
+
         await message.answer(
             "Произошла ошибка при добавлении в список ожидания. Пожалуйста, попробуй позже.",
             reply_markup=get_start_keyboard()

@@ -30,7 +30,16 @@ async def send_registration_confirmation(bot: Bot, user_id: int, event_id: int, 
         await bot.send_message(user_id, message)
         logger.info(f"Sent registration confirmation to user {user_id} for event {event_id}")
     except Exception as e:
-        logger.error(f"Failed to send registration confirmation: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "message": message,
+                "event": event
+            },
+            user_id=user_id,
+            event_id=event_id,
+            message="Failed to send registration confirmation"
+        )
 
 async def send_waitlist_confirmation(bot: Bot, user_id: int, event_id: int, role: str):
     """Send confirmation message after adding to waitlist."""
@@ -46,7 +55,16 @@ async def send_waitlist_confirmation(bot: Bot, user_id: int, event_id: int, role
         await bot.send_message(user_id, message)
         logger.info(f"Sent waitlist confirmation to user {user_id} for event {event_id}")
     except Exception as e:
-        logger.error(f"Failed to send waitlist confirmation: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "message": message,
+                "event": event
+            },
+            user_id=user_id,
+            event_id=event_id,
+            message="Failed to send waitlist confirmation"
+        )
 
 async def send_waitlist_notification(bot: Bot, user_id: int, waitlist_id: int, event_id: int, role: str):
     """Send notification to the next person in waitlist."""
@@ -70,7 +88,19 @@ async def send_waitlist_notification(bot: Bot, user_id: int, waitlist_id: int, e
 
         logger.info(f"Sent waitlist notification to user {user_id} for event {event_id}")
     except Exception as e:
-        logger.error(f"Failed to send waitlist notification: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "message": message,
+                "event": event,
+                "waitlist_id": waitlist_id,
+                "role": role,
+                "keyboard": str(keyboard)
+            },
+            user_id=user_id,
+            event_id=event_id,
+            message="Failed to send waitlist notification"
+        )
 
 
 async def send_talk_update_confirmation(bot: Bot, user_id: int, registration_id: int, field: str):
@@ -94,7 +124,18 @@ async def send_talk_update_confirmation(bot: Bot, user_id: int, registration_id:
         await bot.send_message(user_id, message)
         logger.info(f"Sent talk update confirmation to user {user_id} for registration {registration_id}")
     except Exception as e:
-        logger.error(f"Failed to send talk update confirmation: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "message": message,
+                "registration": registration,
+                "registration_id": registration_id,
+                "field": field
+            },
+            user_id=user_id,
+            event_id=registration.get("event_id") if registration else None,
+            message="Failed to send talk update confirmation"
+        )
 
 async def send_cancellation_confirmation(bot: Bot, user_id: int, event_id: int, role: str):
     """Send confirmation after registration cancellation."""
@@ -110,7 +151,17 @@ async def send_cancellation_confirmation(bot: Bot, user_id: int, event_id: int, 
         await bot.send_message(user_id, message)
         logger.info(f"Sent cancellation confirmation to user {user_id} for event {event_id}")
     except Exception as e:
-        logger.error(f"Failed to send cancellation confirmation: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "message": message,
+                "event": event,
+                "role": role
+            },
+            user_id=user_id,
+            event_id=event_id,
+            message="Failed to send cancellation confirmation"
+        )
 
 
 async def check_expired_waitlist_notifications(bot: Bot):
@@ -164,7 +215,13 @@ async def check_expired_waitlist_notifications(bot: Bot):
 
             return len(expired_entries)
     except Exception as e:
-        logger.error(f"Error checking expired waitlist notifications: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "expiration_time": expiration_time
+            },
+            message="Error checking expired waitlist notifications"
+        )
         return 0
 
 async def send_admin_notification(bot: Bot, notification_type: str, event_id: int, user_info: dict, role: str = None, additional_info: str = None):
@@ -239,4 +296,15 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
         await bot.send_message(NOTIFICATION_CHAT_ID, message)
         logger.info(f"Sent admin notification about {notification_type} for event {event_id}")
     except Exception as e:
-        logger.error(f"Failed to send admin notification: {e}")
+        log_exception(
+            exception=e,
+            context={
+                "notification_type": notification_type,
+                "user_info": user_info,
+                "role": role,
+                "additional_info": additional_info,
+                "message": message if 'message' in locals() else None
+            },
+            event_id=event_id,
+            message="Failed to send admin notification"
+        )

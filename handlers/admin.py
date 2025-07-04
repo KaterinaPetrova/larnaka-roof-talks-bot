@@ -407,7 +407,16 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                     await bot.send_message(user["user_id"], message_text)
                     sent_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to send message to user {user['user_id']}: {e}")
+                    log_exception(
+                        exception=e,
+                        context={
+                            "message_text": message_text,
+                            "user": user
+                        },
+                        user_id=user["user_id"],
+                        event_id=event_id,
+                        message=f"Failed to send message to user {user['user_id']}"
+                    )
 
             # Set state to waiting for admin action
             await state.set_state(AdminState.waiting_for_action)
@@ -486,7 +495,21 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                     reply_markup=get_admin_keyboard()
                 )
             except Exception as e:
-                logger.error(f"Failed to remove user: {e}")
+                # Get data from state for context
+                state_data = await state.get_data()
+
+                # Log the exception with context
+                log_exception(
+                    exception=e,
+                    context={
+                        "registration_id": registration_id,
+                        "registration": registration,
+                        "state_data": state_data
+                    },
+                    user_id=callback.from_user.id if callback.from_user else None,
+                    event_id=registration.get("event_id") if registration else None,
+                    message="Failed to remove user"
+                )
 
                 # Set state to waiting for admin action
                 await state.set_state(AdminState.waiting_for_action)
@@ -580,7 +603,22 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                     reply_markup=get_admin_keyboard()
                 )
             except Exception as e:
-                logger.error(f"Failed to update slots: {e}")
+                # Get data from state for context
+                state_data = await state.get_data()
+
+                # Log the exception with context
+                log_exception(
+                    exception=e,
+                    context={
+                        "event_id": event_id,
+                        "slot_type": slot_type,
+                        "slot_count": slot_count,
+                        "state_data": state_data
+                    },
+                    user_id=callback.from_user.id if callback.from_user else None,
+                    event_id=event_id,
+                    message="Failed to update slots"
+                )
 
                 # Set state to waiting for admin action
                 await state.set_state(AdminState.waiting_for_action)
@@ -644,7 +682,28 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                 reply_markup=get_admin_keyboard()
             )
         except Exception as e:
-            logger.error(f"Failed to add user: {e}")
+            # Get data from state for context
+            state_data = await state.get_data()
+
+            # Log the exception with context
+            log_exception(
+                exception=e,
+                context={
+                    "event_id": event_id,
+                    "role": role,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "topic": topic,
+                    "description": description,
+                    "has_presentation": has_presentation,
+                    "comments": comments,
+                    "user_id": user_id,
+                    "state_data": state_data
+                },
+                user_id=callback.from_user.id if callback.from_user else None,
+                event_id=event_id,
+                message="Failed to add user"
+            )
 
             # Set state to waiting for admin action
             await state.set_state(AdminState.waiting_for_action)

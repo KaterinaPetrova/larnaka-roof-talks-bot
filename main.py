@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import pytz
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,8 +12,18 @@ from middlewares import setup_middlewares
 from utils.notifications import check_expired_waitlist_notifications
 from utils.bot_commands import setup_bot_commands
 
+# Ensure logs directory exists
+os.makedirs('logs', exist_ok=True)
+
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/bot.log'),
+        logging.StreamHandler()
+    ]
+)
 
 # Initialize bot and dispatcher
 bot = Bot(token=BOT_TOKEN)

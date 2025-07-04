@@ -2,6 +2,7 @@ import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from utils.logging import log_exception
 
 from database.db import (
     get_registration, 
@@ -254,7 +255,23 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
 
             logger.info(f"Participant {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']} - waiting for payment")
     except Exception as e:
-        logger.error(f"Error accepting waitlist: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+        waitlist_entry = state_data.get("waitlist_entry", {})
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "waitlist_entry": waitlist_entry,
+                "callback_data": callback.data,
+                "state_data": state_data
+            },
+            user_id=callback.from_user.id if callback.from_user else None,
+            event_id=waitlist_entry.get("event_id"),
+            message="Error accepting waitlist"
+        )
+
         await callback.message.delete()
         await callback.message.answer(
             "Произошла ошибка при подтверждении участия. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
@@ -344,7 +361,23 @@ async def process_waitlist_payment_confirmation(message: Message, state: FSMCont
         logger.info(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
 
     except Exception as e:
-        logger.error(f"Error processing waitlist payment: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+        waitlist_entry = state_data.get("waitlist_entry", {})
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "waitlist_entry": waitlist_entry,
+                "message_text": message.text,
+                "state_data": state_data
+            },
+            user_id=message.from_user.id if message.from_user else None,
+            event_id=waitlist_entry.get("event_id"),
+            message="Error processing waitlist payment"
+        )
+
         await message.answer(
             "Произошла ошибка при обработке платежа. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
             reply_markup=get_start_keyboard()
@@ -417,7 +450,23 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
         logger.info(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
 
     except Exception as e:
-        logger.error(f"Error processing waitlist payment: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+        waitlist_entry = state_data.get("waitlist_entry", {})
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "waitlist_entry": waitlist_entry,
+                "callback_data": callback.data,
+                "state_data": state_data
+            },
+            user_id=callback.from_user.id if callback.from_user else None,
+            event_id=waitlist_entry.get("event_id"),
+            message="Error processing waitlist payment"
+        )
+
         await callback.message.delete()
         await callback.message.answer(
             "Произошла ошибка при обработке платежа. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
@@ -500,7 +549,21 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
 
         logger.info(f"User {waitlist_entry['user_id']} declined waitlist spot for event {waitlist_entry['event_id']}")
     except Exception as e:
-        logger.error(f"Error declining waitlist: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "callback_data": callback.data,
+                "state_data": state_data,
+                "waitlist_id": waitlist_id
+            },
+            user_id=callback.from_user.id if callback.from_user else None,
+            message="Error declining waitlist"
+        )
+
         await callback.message.delete()
         await callback.message.answer(
             "Произошла ошибка при отказе от участия. Пожалуйста, попробуйте позже или свяжитесь с организаторами.",
@@ -658,7 +721,23 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
         logger.info(f"Sent cancellation confirmation to user {callback.from_user.id} for event {registration['event_id']}")
 
     except Exception as e:
-        logger.error(f"Error cancelling registration: {e}")
+        # Get data from state for context
+        state_data = await state.get_data()
+
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "callback_data": callback.data,
+                "state_data": state_data,
+                "registration_id": registration_id,
+                "registration": registration
+            },
+            user_id=callback.from_user.id if callback.from_user else None,
+            event_id=registration.get("event_id") if registration else None,
+            message="Error cancelling registration"
+        )
+
         await callback.message.delete()
         await callback.message.answer(
             "Произошла ошибка при отмене регистрации. Пожалуйста, попробуй позже.",
