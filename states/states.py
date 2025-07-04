@@ -52,6 +52,8 @@ class AdminState(StatesGroup):
     waiting_for_role = State()
     waiting_for_user = State()
     waiting_for_message = State()
+    waiting_for_slot_type = State()
+    waiting_for_slot_count = State()
     confirmation = State()
 
 class AdminAddUserState(StatesGroup):

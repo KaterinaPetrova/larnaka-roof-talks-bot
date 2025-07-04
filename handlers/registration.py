@@ -319,7 +319,8 @@ async def process_payment(message: Message, state: FSMContext):
             data.get("topic"),
             data.get("description"),
             data.get("has_presentation"),
-            data.get("comments")
+            data.get("comments"),
+            message.from_user.username
         )
 
         # Send confirmation to user
@@ -334,6 +335,7 @@ async def process_payment(message: Message, state: FSMContext):
         user_info = {
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
+            "username": message.from_user.username,
             "topic": data.get("topic")
         }
         await send_admin_notification(
@@ -381,7 +383,8 @@ async def process_payment_callback(callback: CallbackQuery, state: FSMContext):
             data.get("topic"),
             data.get("description"),
             data.get("has_presentation"),
-            data.get("comments")
+            data.get("comments"),
+            callback.from_user.username
         )
 
         # Send confirmation to user
@@ -396,6 +399,7 @@ async def process_payment_callback(callback: CallbackQuery, state: FSMContext):
         user_info = {
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
+            "username": callback.from_user.username,
             "topic": data.get("topic")
         }
         await send_admin_notification(
@@ -689,7 +693,8 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
             data.get("topic"),
             data.get("description"),
             data.get("has_presentation"),
-            data.get("comments")
+            data.get("comments"),
+            message.from_user.username
         )
 
         # Send confirmation to user
@@ -704,6 +709,7 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
         user_info = {
             "first_name": data.get("first_name"),
             "last_name": data.get("last_name"),
+            "username": message.from_user.username,
             "topic": data.get("topic")
         }
         await send_admin_notification(

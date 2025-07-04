@@ -189,13 +189,14 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             return
 
         user_name = f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}"
+        username_display = f" (@{user_info.get('username')})" if user_info.get('username') else ""
         role_text = "спикера" if role == "speaker" else "участника"
 
         if notification_type == "registration":
             message = (
                 f"🆕 Новая регистрация {role_text}!\n"
                 f"Мероприятие: {event['title']} ({event['date']})\n"
-                f"Пользователь: {user_name}"
+                f"Пользователь: {user_name}{username_display}"
             )
             if role == "speaker" and user_info.get('topic'):
                 message += f"\nТема: {user_info.get('topic')}"
@@ -204,7 +205,7 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             message = (
                 f"❌ Отмена регистрации {role_text}!\n"
                 f"Мероприятие: {event['title']} ({event['date']})\n"
-                f"Пользователь: {user_name}"
+                f"Пользователь: {user_name}{username_display}"
             )
             if role == "speaker" and user_info.get('topic'):
                 message += f"\nТема: {user_info.get('topic')}"
@@ -213,7 +214,7 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             message = (
                 f"✏️ Обновление информации {role_text}!\n"
                 f"Мероприятие: {event['title']} ({event['date']})\n"
-                f"Пользователь: {user_name}"
+                f"Пользователь: {user_name}{username_display}"
             )
             if additional_info:
                 message += f"\nИзменено: {additional_info}"
@@ -222,7 +223,7 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             message = (
                 f"⏳ Новый пользователь в списке ожидания!\n"
                 f"Мероприятие: {event['title']} ({event['date']})\n"
-                f"Пользователь: {user_name}\n"
+                f"Пользователь: {user_name}{username_display}\n"
                 f"Роль: {'Спикер' if role == 'speaker' else 'Участник'}"
             )
             if role == "speaker" and user_info.get('topic'):
@@ -231,7 +232,7 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             message = (
                 f"ℹ️ Уведомление о мероприятии!\n"
                 f"Мероприятие: {event['title']} ({event['date']})\n"
-                f"Пользователь: {user_name}\n"
+                f"Пользователь: {user_name}{username_display}\n"
                 f"Действие: {notification_type}"
             )
 

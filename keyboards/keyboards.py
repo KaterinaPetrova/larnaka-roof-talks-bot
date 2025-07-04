@@ -192,6 +192,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="📢 Написать всем", callback_data="admin_message_all")],
         [InlineKeyboardButton(text="➕ Добавить слушателя вручную", callback_data="admin_add_user")],
         [InlineKeyboardButton(text="🗑️ Удалить слушателя", callback_data="admin_remove_user")],
+        [InlineKeyboardButton(text="🔄 Изменить количество мест", callback_data="admin_change_slots")],
         [InlineKeyboardButton(text="📈 Посмотреть статистику", callback_data="admin_stats")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
     ])
@@ -245,4 +246,14 @@ def get_admin_user_list_keyboard(users, event_id, role, action="view"):
         InlineKeyboardButton(text="◀️ Назад", callback_data=f"back_to_admin_role_{event_id}")
     ])
 
+    return keyboard
+
+# Admin slot type selection keyboard
+def get_admin_slot_type_keyboard(event_id):
+    """Get keyboard for selecting slot type to change."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎤 Спикеры", callback_data=f"admin_slot_type_{event_id}_speaker")],
+        [InlineKeyboardButton(text="🙋‍♀️ Слушатели", callback_data=f"admin_slot_type_{event_id}_participant")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_events")]
+    ])
     return keyboard

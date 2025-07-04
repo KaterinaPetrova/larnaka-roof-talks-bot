@@ -123,22 +123,24 @@ async def process_view_registration(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     event = await get_event(registration["event_id"], user_id)
 
+    is_speaker = registration["role"] == ROLE_SPEAKER
+
     # Prepare message
-    role_text = "Спикер" if registration["role"] == ROLE_SPEAKER else "Участник"
+    role_text = "Спикер" if registration["role"] == is_speaker else "Участник"
     message_text = f"📝 Детали регистрации:\n\n"
     message_text += f"🗓 Мероприятие: {event['title']}\n"
     message_text += f"📅 Дата: {event['date']}\n"
     message_text += f"👤 Роль: {role_text}\n"
     message_text += f"👤 Имя: {registration['first_name']} {registration['last_name']}\n"
 
-    if registration["role"] == ROLE_SPEAKER and registration.get("topic"):
-        message_text += f"📢 Тема: {registration['topic']}\n"
-        if registration.get("description"):
+    if is_speaker and registration["topic"]:
+        message_text += f"📢 Тема доклада: {registration['topic']}\n"
+        if "description" in registration and registration["description"]:
             message_text += f"📝 Описание: {registration['description']}\n"
-        message_text += f"📊 Презентация: {'Да' if registration.get('has_presentation') else 'Нет'}\n"
+        message_text += f"📊 Презентация: {'Да' if registration['has_presentation'] else 'Нет'}\n"
 
     # Send message with registration details
-    is_speaker = registration["role"] == ROLE_SPEAKER
+
     await callback.message.delete()
     await callback.message.answer(
         message_text,

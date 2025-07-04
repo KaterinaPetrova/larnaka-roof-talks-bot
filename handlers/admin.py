@@ -25,7 +25,8 @@ from keyboards.keyboards import (
     get_admin_user_list_keyboard,
     get_admin_confirmation_keyboard,
     get_start_keyboard,
-    get_payment_confirmation_keyboard
+    get_payment_confirmation_keyboard,
+    get_admin_slot_type_keyboard
 )
 from states.states import (
     AdminState,
@@ -232,6 +233,40 @@ async def process_admin_event_selection(callback: CallbackQuery, state: FSMConte
             reply_markup=get_admin_role_keyboard(event_id)
         )
 
+    elif action == "change_slots":
+        # Store event_id in state data
+        await state.update_data(event_id=event_id)
+
+        # Get event statistics to show current slots
+        stats = await get_event_statistics(event_id)
+
+        if not stats:
+            # Reset state to waiting for admin action
+            await state.set_state(AdminState.waiting_for_action)
+            await callback.message.edit_text(
+                "Не удалось получить информацию о мероприятии.",
+                reply_markup=get_admin_keyboard()
+            )
+            await callback.answer()
+            return
+
+        # Set state to waiting for slot type
+        await state.set_state(AdminState.waiting_for_slot_type)
+
+        # Prepare message text with current slots
+        message_text = (
+            f"Текущее количество мест для {stats['event']['title']} — {stats['event']['date']}:\n\n"
+            f"🎤 Спикеры: {stats['speakers']['active']} / {stats['speakers']['max']} (в ожидании: {stats['speakers']['waitlist']})\n"
+            f"🙋‍♀️ Слушатели: {stats['participants']['active']} / {stats['participants']['max']} (в ожидании: {stats['participants']['waitlist']})\n\n"
+            f"Выбери, для кого хочешь изменить количество мест:"
+        )
+
+        # Send message with slot type selection
+        await callback.message.edit_text(
+            message_text,
+            reply_markup=get_admin_slot_type_keyboard(event_id)
+        )
+
     await callback.answer()
 
 # Admin role selection handler
@@ -343,7 +378,7 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
     data = await state.get_data()
 
     if current_state == AdminState.confirmation:
-        # Check if this is a message confirmation or a remove user confirmation
+        # Check if this is a message confirmation, a remove user confirmation, or a slot change confirmation
         if "message_text" in data:
             # This is a message confirmation
             event_id = data.get("event_id")
@@ -459,6 +494,100 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                 # Send error message
                 await callback.message.edit_text(
                     f"Не удалось удалить пользователя: {e}",
+                    reply_markup=get_admin_keyboard()
+                )
+
+        elif "slot_count" in data and "slot_type" in data and "event_id" in data:
+            # This is a slot change confirmation
+            event_id = data.get("event_id")
+            slot_type = data.get("slot_type")
+            slot_count = data.get("slot_count")
+
+            if not event_id or not slot_type or not slot_count:
+                await callback.message.edit_text(
+                    "Произошла ошибка. Попробуй еще раз.",
+                    reply_markup=get_admin_keyboard()
+                )
+                await state.set_state(AdminState.waiting_for_action)
+                await callback.answer()
+                return
+
+            try:
+                # Update the event slots
+                from database.db import update_event_slots
+
+                # Set the appropriate parameter based on slot_type
+                max_speakers = slot_count if slot_type == "speaker" else None
+                max_participants = slot_count if slot_type == "participant" else None
+
+                # Update the slots
+                success = await update_event_slots(event_id, max_speakers, max_participants)
+
+                if not success:
+                    raise Exception("Failed to update event slots")
+
+                # Get event statistics after update
+                stats = await get_event_statistics(event_id)
+
+                if not stats:
+                    raise Exception("Failed to get event statistics after update")
+
+                # Check if there are people on the waitlist who can now be notified
+                from database.db import get_event_waitlist
+                from utils.notifications import send_waitlist_notification
+
+                # Get the role for waitlist queries
+                role = "speaker" if slot_type == "speaker" else "participant"
+
+                # Get the waitlist for this event and role
+                waitlist = await get_event_waitlist(event_id, role)
+
+                # Count how many people we can notify (new slots - active registrations)
+                if role == "speaker":
+                    available_slots = stats['speakers']['max'] - stats['speakers']['active']
+                else:
+                    available_slots = stats['participants']['max'] - stats['participants']['active']
+
+                # Notify people on the waitlist if there are available slots
+                notified_count = 0
+                for i, entry in enumerate(waitlist):
+                    if i < available_slots and entry["status"] == "active":
+                        await send_waitlist_notification(
+                            callback.bot,
+                            entry["user_id"],
+                            entry["id"],
+                            event_id,
+                            role
+                        )
+                        notified_count += 1
+                        logger.info(f"Sent waitlist notification to user {entry['user_id']} after slot increase")
+
+                # Set state to waiting for admin action
+                await state.set_state(AdminState.waiting_for_action)
+
+                # Prepare confirmation message
+                role_text = "спикеров" if role == "speaker" else "слушателей"
+                message_text = (
+                    f"Количество мест для {role_text} успешно изменено на {slot_count}.\n"
+                )
+
+                if notified_count > 0:
+                    message_text += f"Отправлено {notified_count} уведомлений пользователям из списка ожидания."
+
+                # Send confirmation
+                await callback.message.edit_text(
+                    message_text,
+                    reply_markup=get_admin_keyboard()
+                )
+            except Exception as e:
+                logger.error(f"Failed to update slots: {e}")
+
+                # Set state to waiting for admin action
+                await state.set_state(AdminState.waiting_for_action)
+
+                # Send error message
+                await callback.message.edit_text(
+                    f"Не удалось изменить количество мест: {e}",
                     reply_markup=get_admin_keyboard()
                 )
 
@@ -657,6 +786,33 @@ async def process_admin_remove_user(callback: CallbackQuery, state: FSMContext):
     # Send message with events
     await callback.message.edit_text(
         "Выбери мероприятие, из которого хочешь удалить слушателя:",
+        reply_markup=get_admin_events_keyboard(events)
+    )
+
+    await callback.answer()
+
+# Admin change slots handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_change_slots")
+async def process_admin_change_slots(callback: CallbackQuery, state: FSMContext):
+    """Handle admin change slots button click."""
+    # Get open events
+    events = await get_open_events()
+
+    if not events:
+        await callback.message.edit_text(
+            "Сейчас нет открытых мероприятий.",
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    # Set state to waiting for event
+    await state.set_state(AdminState.waiting_for_event)
+    await state.update_data(action="change_slots")
+
+    # Send message with events
+    await callback.message.edit_text(
+        "Выбери мероприятие, для которого хочешь изменить количество мест:",
         reply_markup=get_admin_events_keyboard(events)
     )
 
@@ -884,6 +1040,139 @@ async def process_admin_add_user_comments(message: Message, state: FSMContext):
         reply_markup=get_admin_confirmation_keyboard()
     )
 
+
+# Admin slot type selection handler
+@router.callback_query(AdminState.waiting_for_slot_type, F.data.startswith("admin_slot_type_"))
+async def process_admin_slot_type_selection(callback: CallbackQuery, state: FSMContext):
+    """Handle admin slot type selection."""
+    # Extract event_id and slot_type from callback data
+    parts = callback.data.split("_")
+    event_id = int(parts[3])
+    slot_type = parts[4]  # 'speaker' or 'participant'
+
+    # Store event_id and slot_type in state data
+    await state.update_data(event_id=event_id, slot_type=slot_type)
+
+    # Get event statistics to show current slots
+    stats = await get_event_statistics(event_id)
+
+    if not stats:
+        # Reset state to waiting for admin action
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.message.edit_text(
+            "Не удалось получить информацию о мероприятии.",
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    # Get current slot count and active registrations
+    if slot_type == "speaker":
+        current_slots = stats['speakers']['max']
+        active_count = stats['speakers']['active']
+        waitlist_count = stats['speakers']['waitlist']
+        role_text = "спикеров"
+    else:  # participant
+        current_slots = stats['participants']['max']
+        active_count = stats['participants']['active']
+        waitlist_count = stats['participants']['waitlist']
+        role_text = "слушателей"
+
+    # Set state to waiting for slot count
+    await state.set_state(AdminState.waiting_for_slot_count)
+
+    # Prepare message text
+    message_text = (
+        f"Текущее количество мест для {role_text}: {current_slots}\n"
+        f"Активных регистраций: {active_count}\n"
+        f"В списке ожидания: {waitlist_count}\n\n"
+        f"Введи новое количество мест для {role_text}:"
+    )
+
+    # Send message asking for new slot count
+    await callback.message.edit_text(
+        message_text,
+        reply_markup=None
+    )
+
+    await callback.answer()
+
+# Admin slot count input handler
+@router.message(AdminState.waiting_for_slot_count)
+async def process_admin_slot_count_input(message: Message, state: FSMContext):
+    """Handle admin slot count input."""
+    # Get slot count
+    try:
+        slot_count = int(message.text.strip())
+        if slot_count < 0:
+            raise ValueError("Slot count must be positive")
+    except ValueError:
+        await message.answer(
+            "Пожалуйста, введи положительное целое число.",
+            reply_markup=None
+        )
+        return
+
+    # Get data from state
+    data = await state.get_data()
+    event_id = data.get("event_id")
+    slot_type = data.get("slot_type")
+
+    if not event_id or not slot_type:
+        await message.answer(
+            "Произошла ошибка. Попробуй еще раз.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        return
+
+    # Get event statistics
+    stats = await get_event_statistics(event_id)
+
+    if not stats:
+        await message.answer(
+            "Не удалось получить информацию о мероприятии.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        return
+
+    # Get current values
+    if slot_type == "speaker":
+        current_slots = stats['speakers']['max']
+        active_count = stats['speakers']['active']
+        role_text = "спикеров"
+    else:  # participant
+        current_slots = stats['participants']['max']
+        active_count = stats['participants']['active']
+        role_text = "слушателей"
+
+    # Check if new slot count is less than active registrations
+    if slot_count < active_count:
+        await message.answer(
+            f"Новое количество мест ({slot_count}) меньше, чем количество активных регистраций ({active_count}).\n"
+            f"Пожалуйста, введи число не меньше {active_count}.",
+            reply_markup=None
+        )
+        return
+
+    # Store slot_count in state data
+    await state.update_data(slot_count=slot_count)
+
+    # Set state to confirmation
+    await state.set_state(AdminState.confirmation)
+
+    # Prepare confirmation message
+    message_text = (
+        f"Ты собираешься изменить количество мест для {role_text} с {current_slots} на {slot_count}.\n\n"
+        f"Подтверждаешь изменение?"
+    )
+
+    # Ask for confirmation
+    await message.answer(
+        message_text,
+        reply_markup=get_admin_confirmation_keyboard()
+    )
 
 # Back to admin events handler
 @router.callback_query(F.data == "back_to_admin_events")

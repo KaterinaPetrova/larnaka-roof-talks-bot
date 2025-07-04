@@ -32,6 +32,7 @@ async def init_db():
             user_id INTEGER NOT NULL,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
+            username TEXT,
             role TEXT NOT NULL,
             status TEXT NOT NULL,
             topic TEXT,
@@ -52,6 +53,7 @@ async def init_db():
             user_id INTEGER NOT NULL,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
+            username TEXT,
             role TEXT NOT NULL,
             status TEXT NOT NULL,
             topic TEXT,
@@ -92,6 +94,32 @@ async def migrate_db():
             logger.info("Added is_test column to events table")
         else:
             logger.info("is_test column already exists in events table")
+
+        # Check if username column exists in registrations table
+        cursor = await db.execute("PRAGMA table_info(registrations)")
+        columns = await cursor.fetchall()
+        column_names = [column[1] for column in columns]
+
+        # Add username column if it doesn't exist
+        if 'username' not in column_names:
+            await db.execute("ALTER TABLE registrations ADD COLUMN username TEXT")
+            await db.commit()
+            logger.info("Added username column to registrations table")
+        else:
+            logger.info("username column already exists in registrations table")
+
+        # Check if username column exists in waitlist table
+        cursor = await db.execute("PRAGMA table_info(waitlist)")
+        columns = await cursor.fetchall()
+        column_names = [column[1] for column in columns]
+
+        # Add username column if it doesn't exist
+        if 'username' not in column_names:
+            await db.execute("ALTER TABLE waitlist ADD COLUMN username TEXT")
+            await db.commit()
+            logger.info("Added username column to waitlist table")
+        else:
+            logger.info("username column already exists in waitlist table")
 
 # Event operations
 async def create_event(title, date, description, max_speakers, max_participants, status, is_test=False):
@@ -166,8 +194,33 @@ async def update_event_status(event_id, status):
         await db.execute("UPDATE events SET status = ? WHERE id = ?", (status, event_id))
         await db.commit()
 
+async def update_event_slots(event_id, max_speakers=None, max_participants=None):
+    """Update the number of slots for an event."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        # Get current values if not provided
+        if max_speakers is None or max_participants is None:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT max_speakers, max_participants FROM events WHERE id = ?", (event_id,))
+            event = await cursor.fetchone()
+
+            if not event:
+                logger.error(f"Event {event_id} not found")
+                return False
+
+            max_speakers = max_speakers if max_speakers is not None else event["max_speakers"]
+            max_participants = max_participants if max_participants is not None else event["max_participants"]
+
+        # Update the event
+        await db.execute(
+            "UPDATE events SET max_speakers = ?, max_participants = ? WHERE id = ?", 
+            (max_speakers, max_participants, event_id)
+        )
+        await db.commit()
+        logger.info(f"Updated slots for event {event_id}: speakers={max_speakers}, participants={max_participants}")
+        return True
+
 # Registration operations
-async def register_user(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None):
+async def register_user(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None, username=None):
     """Register a user for an event."""
     async with aiosqlite.connect(DB_NAME) as db:
         registered_at = datetime.now().isoformat()
@@ -184,11 +237,11 @@ async def register_user(event_id, user_id, first_name, last_name, role, status, 
             # Update existing registration
             await db.execute(
                 '''UPDATE registrations SET 
-                   first_name = ?, last_name = ?, status = ?, 
+                   first_name = ?, last_name = ?, username = ?, status = ?, 
                    topic = ?, description = ?, has_presentation = ?, 
                    comments = ?, registered_at = ? 
                    WHERE id = ?''',
-                (first_name, last_name, status, topic, description, 
+                (first_name, last_name, username, status, topic, description, 
                  has_presentation, comments, registered_at, existing_registration["id"])
             )
             logger.info(f"Updated existing registration for user {user_id} in event {event_id} with role {role}")
@@ -196,9 +249,9 @@ async def register_user(event_id, user_id, first_name, last_name, role, status, 
             # Insert new registration
             await db.execute(
                 '''INSERT INTO registrations 
-                   (event_id, user_id, first_name, last_name, role, status, topic, description, has_presentation, comments, registered_at) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (event_id, user_id, first_name, last_name, role, status, topic, description, has_presentation, comments, registered_at)
+                   (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, registered_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, registered_at)
             )
             logger.info(f"Created new registration for user {user_id} in event {event_id} with role {role}")
 
@@ -251,15 +304,15 @@ async def count_active_registrations(event_id, role):
         return result[0] if result else 0
 
 # Waitlist operations
-async def add_to_waitlist(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None):
+async def add_to_waitlist(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None, username=None):
     """Add a user to the waitlist."""
     async with aiosqlite.connect(DB_NAME) as db:
         added_at = datetime.now().isoformat()
         await db.execute(
             '''INSERT INTO waitlist 
-               (event_id, user_id, first_name, last_name, role, status, topic, description, has_presentation, comments, added_at) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            (event_id, user_id, first_name, last_name, role, status, topic, description, has_presentation, comments, added_at)
+               (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at)
         )
         await db.commit()
 
