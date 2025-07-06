@@ -170,6 +170,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
     import aiosqlite
     from config import DB_NAME, WAITLIST_TIMEOUT_HOURS
     from datetime import datetime, timedelta
+    from text_constants import WAITLIST_EXPIRED_MESSAGE
 
     logger = logging.getLogger(__name__)
 
@@ -193,6 +194,13 @@ async def check_expired_waitlist_notifications(bot: Bot):
                     "UPDATE waitlist SET status = 'expired' WHERE id = ?",
                     (entry["id"],)
                 )
+
+                # Send expiration notification to the user
+                try:
+                    await bot.send_message(entry["user_id"], WAITLIST_EXPIRED_MESSAGE)
+                    logger.info(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
+                except Exception as e:
+                    logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
 
                 # Check if there's another person on the waitlist
                 next_waitlist = await get_next_from_waitlist(entry["event_id"], entry["role"])
