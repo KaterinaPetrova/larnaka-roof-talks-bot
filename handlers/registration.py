@@ -3,6 +3,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
+from utils import log_exception
+from utils.validation_helpers import (
+    handle_error_and_return
+)
+
 from database.db import (
     get_event, 
     count_active_registrations, 
@@ -516,14 +521,11 @@ async def process_waitlist_confirmation(callback: CallbackQuery, state: FSMConte
 
     # Check if user is already on waitlist
     if await is_on_waitlist(event_id, callback.from_user.id, role):
-        await callback.message.delete()
-        await callback.message.answer(
+        return await handle_error_and_return(
+            callback,
             "Вы уже в вейт листе.",
-            reply_markup=get_start_keyboard()
+            state
         )
-        await state.clear()
-        await callback.answer()
-        return
 
     # Store event_id and role in state data
     await state.update_data(event_id=event_id, role=role)

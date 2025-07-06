@@ -5,8 +5,17 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from config import BOT_TOKEN, REVOLUT_DONATION_URL
+from utils import log_exception
 from utils.notifications import send_admin_notification
 from utils.validation import has_available_slots
+from utils.validation_helpers import (
+    validate_waitlist_entry,
+    validate_waitlist_status,
+    validate_event,
+    validate_registration,
+    validate_registration_owner,
+    handle_error_and_return
+)
 
 from database.db import (
     is_admin,

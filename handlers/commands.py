@@ -3,6 +3,14 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
+from utils.validation_helpers import (
+    validate_waitlist_entry,
+    validate_waitlist_status,
+    validate_event,
+    validate_registration,
+    validate_registration_owner,
+    handle_error_and_return
+)
 
 from database.db import get_open_events, get_user_registrations, is_admin, count_active_registrations, get_event
 from config import ROLE_SPEAKER, ROLE_PARTICIPANT
@@ -227,13 +235,9 @@ async def process_waitlist_event(callback: CallbackQuery, state: FSMContext):
     # Get event details, passing user_id to filter test events for non-admins
     user_id = callback.from_user.id
     event = await get_event(event_id, user_id)
-    if not event:
-        await callback.message.delete()
-        await callback.message.answer(
-            "Мероприятие не найдено.",
-            reply_markup=get_start_keyboard()
-        )
-        await callback.answer()
+
+    # Validate event
+    if not await validate_event(callback, event):
         return
 
     # Check which roles are full
