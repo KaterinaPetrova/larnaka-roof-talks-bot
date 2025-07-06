@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from config import ROLE_SPEAKER, ROLE_PARTICIPANT
-from text_constants import (
+from utils.text_constants import (
     KEYBOARD_REGISTER,
     KEYBOARD_MY_EVENTS,
     KEYBOARD_HELP,

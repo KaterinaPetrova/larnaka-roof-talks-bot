@@ -42,7 +42,7 @@ from states.states import (
     StartState,
     AdminAddUserState
 )
-from text_constants import (
+from utils.text_constants import (
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
     KEYBOARD_PAYMENT_CONFIRMED,

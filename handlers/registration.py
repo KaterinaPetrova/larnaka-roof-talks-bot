@@ -45,7 +45,7 @@ from config import (
     REG_STATUS_ACTIVE,
     REVOLUT_DONATION_URL
 )
-from text_constants import (
+from utils.text_constants import (
     REGISTRATION_EVENT_CLOSED,
     REGISTRATION_ALREADY_REGISTERED,
     REGISTRATION_ROLE_SELECTION,

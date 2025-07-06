@@ -49,7 +49,7 @@ from config import (
     REG_STATUS_CANCELLED
 )
 from datetime import datetime
-from text_constants import (
+from utils.text_constants import (
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
     KEYBOARD_PAYMENT_CONFIRMED

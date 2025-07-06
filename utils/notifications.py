@@ -170,7 +170,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
     import aiosqlite
     from config import DB_NAME, WAITLIST_TIMEOUT_HOURS
     from datetime import datetime, timedelta
-    from text_constants import WAITLIST_EXPIRED_MESSAGE
+    from utils.text_constants import WAITLIST_EXPIRED_MESSAGE
 
     logger = logging.getLogger(__name__)
 
