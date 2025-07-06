@@ -49,9 +49,11 @@ class LoggingMiddleware(BaseMiddleware):
 
         # Log the update ID and chat ID
         if chat_id is not None:
-            logger.info(f"Update ID: {update_id}, Chat ID: {chat_id}, User ID: {user_id}")
+            logger.info(f"Chat ID: {chat_id}")
+            logger.info(f"Update ID: {update_id}, User ID: {user_id}")
         else:
-            logger.info(f"Update ID: {update_id}, Chat ID: Not available, User ID: {user_id}")
+            logger.info(f"Chat ID: Not available")
+            logger.info(f"Update ID: {update_id}, User ID: {user_id}")
 
         try:
             # Continue processing the update

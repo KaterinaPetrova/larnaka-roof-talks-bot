@@ -194,6 +194,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="🗑️ Удалить слушателя", callback_data="admin_remove_user")],
         [InlineKeyboardButton(text="🔄 Изменить количество мест", callback_data="admin_change_slots")],
         [InlineKeyboardButton(text="📈 Посмотреть статистику", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="💾 Выгрузить базу данных", callback_data="admin_export_db")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
     ])
     return keyboard

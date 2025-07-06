@@ -32,3 +32,6 @@ NOTIFICATION_CHAT_ID = os.getenv("NOTIFICATION_CHAT_ID")
 
 # Revolut donation link
 REVOLUT_DONATION_URL = os.getenv("REVOLUT_DONATION_URL")
+
+# Backup chat ID for database exports
+BACKUP_CHAT_ID = os.getenv("BACKUP_CHAT_ID")

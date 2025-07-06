@@ -10,6 +10,7 @@ from handlers import register_all_handlers
 from database.db import init_db, migrate_db
 from middlewares import setup_middlewares
 from utils.notifications import check_expired_waitlist_notifications
+from handlers.admin import export_database_auto
 from utils.bot_commands import setup_bot_commands
 
 # Ensure logs directory exists
@@ -56,11 +57,19 @@ async def main():
         kwargs={'bot': bot}
     )
 
+    # Add scheduler job to export database daily at 10:00
+    scheduler.add_job(
+        export_database_auto,
+        'cron',
+        hour=10,
+        minute=0
+    )
+
     # Start scheduler
     scheduler.start()
 
     # Log scheduler start
-    logging.info("Scheduler started, checking expired waitlist notifications every 30 minutes")
+    logging.info("Scheduler started, checking expired waitlist notifications every 30 minutes and exporting database daily at 10:00")
 
     # Start polling
     await dp.start_polling(bot, skip_updates=True)

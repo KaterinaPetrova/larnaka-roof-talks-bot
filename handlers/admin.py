@@ -1,10 +1,11 @@
 import logging
+import os
 from datetime import datetime
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from config import BOT_TOKEN, REVOLUT_DONATION_URL
+from config import BOT_TOKEN, REVOLUT_DONATION_URL, DB_NAME, BACKUP_CHAT_ID
 from utils import log_exception
 from utils.notifications import send_admin_notification
 from utils.validation import has_available_slots
@@ -1303,3 +1304,81 @@ async def process_back_to_start(callback: CallbackQuery, state: FSMContext):
     )
 
     await callback.answer()
+
+# Database export handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_export_db")
+async def process_admin_export_db(callback: CallbackQuery, state: FSMContext):
+    """Handle database export button click."""
+    user_id = callback.from_user.id
+
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await callback.message.answer("У тебя нет прав администратора.")
+        await callback.answer()
+        return
+
+    try:
+        # Create FSInputFile from the database file
+        db_file = FSInputFile(DB_NAME, filename=DB_NAME)
+
+        # Send the database file to the user
+        await callback.message.edit_text("Выгружаю базу данных...")
+        await bot.send_document(
+            chat_id=user_id,
+            document=db_file,
+            caption="База данных Roof Talks"
+        )
+
+        # Send success message
+        await callback.message.answer(
+            "База данных успешно выгружена.",
+            reply_markup=get_admin_keyboard()
+        )
+
+        # Log the export
+        logger.info(f"Database exported by admin {user_id}")
+
+    except Exception as e:
+        # Log the error
+        log_exception(
+            exception=e,
+            context={"action": "database_export"},
+            user_id=user_id,
+            message="Error exporting database"
+        )
+
+        # Send error message
+        await callback.message.answer(
+            "Произошла ошибка при выгрузке базы данных. Попробуй еще раз позже.",
+            reply_markup=get_admin_keyboard()
+        )
+
+    await callback.answer()
+
+# Automatic database export function
+async def export_database_auto():
+    """Automatically export database to backup chat."""
+    try:
+        # Create FSInputFile from the database file
+        db_file = FSInputFile(DB_NAME, filename=DB_NAME)
+
+        # Get current date and time
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Send the database file to the backup chat
+        await bot.send_document(
+            chat_id=BACKUP_CHAT_ID,
+            document=db_file,
+            caption=f"Автоматическая выгрузка базы данных Roof Talks\nДата: {current_time}"
+        )
+
+        # Log the export
+        logger.info(f"Database automatically exported to backup chat {BACKUP_CHAT_ID}")
+
+    except Exception as e:
+        # Log the error
+        log_exception(
+            exception=e,
+            context={"action": "automatic_database_export"},
+            message="Error automatically exporting database"
+        )
