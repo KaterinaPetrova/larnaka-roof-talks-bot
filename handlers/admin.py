@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from config import BOT_TOKEN, REVOLUT_DONATION_URL, DB_NAME, BACKUP_CHAT_ID
@@ -27,7 +27,9 @@ from database.db import (
     get_event_speakers,
     register_user,
     cancel_registration,
-    get_registration
+    get_registration,
+    get_event,
+    update_registration
 )
 from keyboards.keyboards import (
     get_admin_keyboard,
@@ -1464,6 +1466,8 @@ async def process_admin_edit_talk(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(AdminState.waiting_for_action, F.data == "admin_add_admin")
 async def process_admin_add_admin(callback: CallbackQuery, state: FSMContext):
     """Handle admin add admin button click."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
     user_id = callback.from_user.id
 
     # Check if user is admin
@@ -1492,6 +1496,8 @@ async def process_admin_add_admin(callback: CallbackQuery, state: FSMContext):
 @router.message(AdminAddAdminState.waiting_for_user_id)
 async def process_admin_add_admin_user_id(message: Message, state: FSMContext):
     """Handle admin add admin user ID input."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
     # Get user ID
     try:
         new_admin_id = int(message.text.strip())
