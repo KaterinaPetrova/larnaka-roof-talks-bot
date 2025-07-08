@@ -208,6 +208,8 @@ async def process_admin_event_selection(callback: CallbackQuery, state: FSMConte
 
         for i, speaker in enumerate(speakers, 1):
             message_text += f"{i}. {speaker['first_name']} {speaker['last_name']}\n"
+            if speaker['username']:
+                message_text += f"   Телеграм: @{speaker['username']}\n"
             message_text += f"   Тема: {speaker['topic']}\n"
             if speaker['description']:
                 message_text += f"   Описание: {speaker['description']}\n"
