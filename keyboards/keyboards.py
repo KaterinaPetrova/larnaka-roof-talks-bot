@@ -190,11 +190,14 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="📋 Посмотреть слушателей", callback_data="admin_view_participants")],
         [InlineKeyboardButton(text="👤 Посмотреть спикеров", callback_data="admin_view_speakers")],
         [InlineKeyboardButton(text="📢 Написать всем", callback_data="admin_message_all")],
+        [InlineKeyboardButton(text="➕ Добавить спикера вручную", callback_data="admin_add_speaker")],
         [InlineKeyboardButton(text="➕ Добавить слушателя вручную", callback_data="admin_add_user")],
         [InlineKeyboardButton(text="🗑️ Удалить слушателя", callback_data="admin_remove_user")],
+        [InlineKeyboardButton(text="✏️ Редактировать доклад", callback_data="admin_edit_talk")],
         [InlineKeyboardButton(text="🔄 Изменить количество мест", callback_data="admin_change_slots")],
         [InlineKeyboardButton(text="📈 Посмотреть статистику", callback_data="admin_stats")],
         [InlineKeyboardButton(text="💾 Выгрузить базу данных", callback_data="admin_export_db")],
+        [InlineKeyboardButton(text="👑 Добавить администратора", callback_data="admin_add_admin")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
     ])
     return keyboard
@@ -256,5 +259,33 @@ def get_admin_slot_type_keyboard(event_id):
         [InlineKeyboardButton(text="🎤 Спикеры", callback_data=f"admin_slot_type_{event_id}_speaker")],
         [InlineKeyboardButton(text="🙋‍♀️ Слушатели", callback_data=f"admin_slot_type_{event_id}_participant")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_events")]
+    ])
+    return keyboard
+
+def get_admin_speaker_list_keyboard(speakers, event_id):
+    """Get keyboard with speaker list for admin to edit talks."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+
+    for speaker in speakers:
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(
+                text=f"{speaker['first_name']} {speaker['last_name']} - {speaker['topic']}",
+                callback_data=f"admin_edit_speaker_{speaker['id']}"
+            )
+        ])
+
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data=f"back_to_admin_events")
+    ])
+
+    return keyboard
+
+def get_admin_edit_talk_keyboard(registration_id):
+    """Get keyboard for admin editing a talk."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="1. Тему", callback_data=f"admin_edit_topic_{registration_id}")],
+        [InlineKeyboardButton(text="2. Описание", callback_data=f"admin_edit_description_{registration_id}")],
+        [InlineKeyboardButton(text="3. Презентацию (да/нет)", callback_data=f"admin_edit_presentation_{registration_id}")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_speakers")]
     ])
     return keyboard

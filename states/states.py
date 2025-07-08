@@ -62,6 +62,7 @@ class AdminAddUserState(StatesGroup):
     waiting_for_role = State()
     waiting_for_first_name = State()
     waiting_for_last_name = State()
+    waiting_for_username = State()
     waiting_for_topic = State()
     waiting_for_description = State()
     waiting_for_presentation = State()
@@ -73,3 +74,18 @@ class WaitlistNotificationState(StatesGroup):
     """States for waitlist notification process."""
     waiting_for_response = State()
     waiting_for_payment = State()
+
+class AdminAddAdminState(StatesGroup):
+    """States for admin adding another admin."""
+    waiting_for_user_id = State()
+    confirmation = State()
+
+class AdminEditTalkState(StatesGroup):
+    """States for admin editing a talk."""
+    waiting_for_event = State()
+    waiting_for_speaker = State()
+    waiting_for_field = State()
+    waiting_for_topic = State()
+    waiting_for_description = State()
+    waiting_for_presentation = State()
+    confirmation = State()

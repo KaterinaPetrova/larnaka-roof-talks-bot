@@ -20,6 +20,7 @@ from utils.validation_helpers import (
 
 from database.db import (
     is_admin,
+    add_admin,
     get_open_events,
     get_event_statistics,
     get_event_participants,
@@ -36,12 +37,17 @@ from keyboards.keyboards import (
     get_admin_confirmation_keyboard,
     get_start_keyboard,
     get_payment_confirmation_keyboard,
-    get_admin_slot_type_keyboard
+    get_admin_slot_type_keyboard,
+    get_admin_speaker_list_keyboard,
+    get_admin_edit_talk_keyboard,
+    get_presentation_keyboard
 )
 from states.states import (
     AdminState,
     StartState,
-    AdminAddUserState
+    AdminAddUserState,
+    AdminAddAdminState,
+    AdminEditTalkState
 )
 from utils.text_constants import (
     PAYMENT_MESSAGE,
@@ -639,12 +645,59 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                     reply_markup=get_admin_keyboard()
                 )
 
+    elif current_state == AdminAddAdminState.confirmation:
+        # This is an add admin confirmation
+        new_admin_id = data.get("new_admin_id")
+
+        if not new_admin_id:
+            await callback.message.edit_text(
+                "Произошла ошибка. Попробуй еще раз.",
+                reply_markup=get_admin_keyboard()
+            )
+            await state.set_state(AdminState.waiting_for_action)
+            await callback.answer()
+            return
+
+        try:
+            # Add the new admin
+            await add_admin(new_admin_id)
+
+            # Set state to waiting for admin action
+            await state.set_state(AdminState.waiting_for_action)
+
+            # Send confirmation
+            await callback.message.edit_text(
+                f"Пользователь с ID {new_admin_id} успешно добавлен как администратор.",
+                reply_markup=get_admin_keyboard()
+            )
+        except Exception as e:
+            # Log the exception with context
+            log_exception(
+                exception=e,
+                context={
+                    "new_admin_id": new_admin_id,
+                    "state_data": data
+                },
+                user_id=callback.from_user.id if callback.from_user else None,
+                message="Failed to add admin"
+            )
+
+            # Set state to waiting for admin action
+            await state.set_state(AdminState.waiting_for_action)
+
+            # Send error message
+            await callback.message.edit_text(
+                f"Не удалось добавить администратора: {e}",
+                reply_markup=get_admin_keyboard()
+            )
+
     elif current_state == AdminAddUserState.confirmation:
         # This is an add user confirmation
         event_id = data.get("event_id")
         role = data.get("role")
         first_name = data.get("first_name")
         last_name = data.get("last_name")
+        username = data.get("username")
         topic = data.get("topic")
         description = data.get("description")
         has_presentation = data.get("has_presentation", False)
@@ -665,7 +718,8 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                 topic=topic,
                 description=description,
                 has_presentation=has_presentation,
-                comments=comments
+                comments=comments,
+                username=username
             )
 
             # Send notification to admin chat
@@ -687,8 +741,9 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
             await state.set_state(AdminState.waiting_for_action)
 
             # Send confirmation
+            role_text = 'Спикер' if role == 'speaker' else 'Слушатель'
             await callback.message.edit_text(
-                f"Слушатель {first_name} {last_name} успешно добавлен.",
+                f"{role_text} {first_name} {last_name} успешно добавлен.",
                 reply_markup=get_admin_keyboard()
             )
         except Exception as e:
@@ -807,6 +862,35 @@ async def process_admin_message_all(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
+# Admin add speaker handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_add_speaker")
+async def process_admin_add_speaker(callback: CallbackQuery, state: FSMContext):
+    """Handle admin add speaker button click."""
+    # Get open events
+    events = await get_open_events()
+
+    if not events:
+        await callback.message.edit_text(
+            "Сейчас нет открытых мероприятий.",
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    # Set state to waiting for event
+    await state.set_state(AdminAddUserState.waiting_for_event)
+
+    # Store role as speaker
+    await state.update_data(role="speaker")
+
+    # Send message with events
+    await callback.message.edit_text(
+        "Выбери мероприятие, на которое хочешь добавить спикера:",
+        reply_markup=get_admin_events_keyboard(events)
+    )
+
+    await callback.answer()
+
 # Admin add user handler
 @router.callback_query(AdminState.waiting_for_action, F.data == "admin_add_user")
 async def process_admin_add_user(callback: CallbackQuery, state: FSMContext):
@@ -891,6 +975,9 @@ async def process_admin_change_slots(callback: CallbackQuery, state: FSMContext)
 @router.callback_query(F.data == "back_to_admin")
 async def process_back_to_admin(callback: CallbackQuery, state: FSMContext):
     """Handle back to admin button click."""
+    # Get current state
+    current_state = await state.get_state()
+
     # Set state to waiting for admin action
     await state.set_state(AdminState.waiting_for_action)
 
@@ -912,14 +999,29 @@ async def process_admin_add_user_event(callback: CallbackQuery, state: FSMContex
     # Store event_id in state data
     await state.update_data(event_id=event_id)
 
-    # Set state to waiting for role
-    await state.set_state(AdminAddUserState.waiting_for_role)
+    # Get data from state
+    data = await state.get_data()
+    role = data.get("role")
 
-    # Send message with role selection
-    await callback.message.edit_text(
-        "Выбери роль для нового слушателя:",
-        reply_markup=get_admin_role_keyboard(event_id)
-    )
+    # If role is already set (from admin_add_speaker), skip role selection
+    if role:
+        # Set state to waiting for first name
+        await state.set_state(AdminAddUserState.waiting_for_first_name)
+
+        # Ask for first name
+        await callback.message.edit_text(
+            "Введи имя нового слушателя:",
+            reply_markup=None
+        )
+    else:
+        # Set state to waiting for role
+        await state.set_state(AdminAddUserState.waiting_for_role)
+
+        # Send message with role selection
+        await callback.message.edit_text(
+            "Выбери роль для нового слушателя:",
+            reply_markup=get_admin_role_keyboard(event_id)
+        )
 
     await callback.answer()
 
@@ -969,6 +1071,22 @@ async def process_admin_add_user_last_name(message: Message, state: FSMContext):
 
     # Store last name in state data
     await state.update_data(last_name=last_name)
+
+    # Set state to waiting for username
+    await state.set_state(AdminAddUserState.waiting_for_username)
+
+    # Ask for username
+    await message.answer("Введи username в Telegram (с символом @ в начале) или '-' если его нет:")
+
+# Admin add user username handler
+@router.message(AdminAddUserState.waiting_for_username)
+async def process_admin_add_user_username(message: Message, state: FSMContext):
+    """Handle admin add user username input."""
+    # Get username
+    username = message.text
+
+    # Store username in state data (None if '-' was entered)
+    await state.update_data(username=None if username == '-' else username)
 
     # Get data from state
     data = await state.get_data()
@@ -1077,6 +1195,7 @@ async def process_admin_add_user_comments(message: Message, state: FSMContext):
     role = data.get("role")
     first_name = data.get("first_name")
     last_name = data.get("last_name")
+    username = data.get("username")
     topic = data.get("topic")
     description = data.get("description")
     has_presentation = data.get("has_presentation", False)
@@ -1086,11 +1205,13 @@ async def process_admin_add_user_comments(message: Message, state: FSMContext):
     await state.set_state(AdminAddUserState.confirmation)
 
     # Prepare confirmation message
+    role_text = 'Спикер' if role == 'speaker' else 'Слушатель'
     message_text = (
-        f"Ты собираешься добавить нового слушателя:\n\n"
+        f"Ты собираешься добавить нового {role_text.lower()}а:\n\n"
         f"Имя: {first_name}\n"
         f"Фамилия: {last_name}\n"
-        f"Роль: {'Спикер' if role == 'speaker' else 'Слушатель'}\n"
+        f"Username: {username or '-'}\n"
+        f"Роль: {role_text}\n"
     )
 
     if role == "speaker":
@@ -1301,6 +1422,463 @@ async def process_back_to_start(callback: CallbackQuery, state: FSMContext):
         "Привет! Я бот Larnaka Roof Talks 🌇\n\n"
         "Что хочешь сделать?",
         reply_markup=get_start_keyboard()
+    )
+
+    await callback.answer()
+
+# Admin edit talk handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_edit_talk")
+async def process_admin_edit_talk(callback: CallbackQuery, state: FSMContext):
+    """Handle admin edit talk button click."""
+    user_id = callback.from_user.id
+
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await callback.message.answer("У тебя нет прав администратора.")
+        await callback.answer()
+        return
+
+    # Get open events
+    events = await get_open_events()
+
+    if not events:
+        await callback.message.edit_text(
+            "Нет активных мероприятий.",
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    # Set state to waiting for event
+    await state.set_state(AdminEditTalkState.waiting_for_event)
+
+    # Show events
+    await callback.message.edit_text(
+        "Выбери мероприятие, для которого хочешь отредактировать доклад:",
+        reply_markup=get_admin_events_keyboard(events)
+    )
+
+    await callback.answer()
+
+# Admin add admin handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_add_admin")
+async def process_admin_add_admin(callback: CallbackQuery, state: FSMContext):
+    """Handle admin add admin button click."""
+    user_id = callback.from_user.id
+
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await callback.message.answer("У тебя нет прав администратора.")
+        await callback.answer()
+        return
+
+    # Set state to waiting for user ID
+    await state.set_state(AdminAddAdminState.waiting_for_user_id)
+
+    # Ask for user ID
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")]
+    ])
+
+    await callback.message.edit_text(
+        "Введи ID пользователя, которого хочешь сделать администратором:\n\n"
+        "ID можно узнать, например, через бота @userinfobot",
+        reply_markup=keyboard
+    )
+
+    await callback.answer()
+
+# Admin add admin user ID handler
+@router.message(AdminAddAdminState.waiting_for_user_id)
+async def process_admin_add_admin_user_id(message: Message, state: FSMContext):
+    """Handle admin add admin user ID input."""
+    # Get user ID
+    try:
+        new_admin_id = int(message.text.strip())
+    except ValueError:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")]
+        ])
+
+        await message.answer(
+            "Пожалуйста, введи корректный ID пользователя (только цифры).",
+            reply_markup=keyboard
+        )
+        return
+
+    # Store user ID in state data
+    await state.update_data(new_admin_id=new_admin_id)
+
+    # Check if user is already an admin
+    if await is_admin(new_admin_id):
+        await message.answer(
+            "Этот пользователь уже является администратором.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        return
+
+    # Set state to confirmation
+    await state.set_state(AdminAddAdminState.confirmation)
+
+    # Ask for confirmation
+    await message.answer(
+        f"Ты собираешься добавить пользователя с ID {new_admin_id} в качестве администратора.\n\n"
+        f"Подтверждаешь добавление?",
+        reply_markup=get_admin_confirmation_keyboard()
+    )
+
+# Admin edit talk event selection handler
+@router.callback_query(AdminEditTalkState.waiting_for_event, F.data.startswith("admin_event_"))
+async def process_admin_edit_talk_event(callback: CallbackQuery, state: FSMContext):
+    """Handle event selection for admin talk editing."""
+    # Extract event_id from callback data
+    event_id = int(callback.data.split("_")[2])
+
+    # Get event details
+    event = await get_event(event_id)
+
+    if not event:
+        await callback.message.edit_text(
+            "Мероприятие не найдено.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Get speakers for this event
+    speakers = await get_event_speakers(event_id)
+
+    if not speakers:
+        await callback.message.edit_text(
+            f"Для мероприятия \"{event['title']}\" нет спикеров.",
+            reply_markup=get_admin_events_keyboard(await get_open_events())
+        )
+        await callback.answer()
+        return
+
+    # Store event_id in state data
+    await state.update_data(event_id=event_id)
+
+    # Set state to waiting for speaker
+    await state.set_state(AdminEditTalkState.waiting_for_speaker)
+
+    # Show speakers
+    await callback.message.edit_text(
+        f"Выбери спикера, чей доклад хочешь отредактировать для мероприятия \"{event['title']}\":",
+        reply_markup=get_admin_speaker_list_keyboard(speakers, event_id)
+    )
+
+    await callback.answer()
+
+# Admin edit talk speaker selection handler
+@router.callback_query(AdminEditTalkState.waiting_for_speaker, F.data.startswith("admin_edit_speaker_"))
+async def process_admin_edit_talk_speaker(callback: CallbackQuery, state: FSMContext):
+    """Handle speaker selection for admin talk editing."""
+    # Extract registration_id from callback data
+    registration_id = int(callback.data.split("_")[3])
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.edit_text(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Get event details
+    event = await get_event(registration["event_id"])
+
+    # Store registration_id in state data
+    await state.update_data(registration_id=registration_id)
+
+    # Set state to waiting for field
+    await state.set_state(AdminEditTalkState.waiting_for_field)
+
+    # Show edit options
+    await callback.message.edit_text(
+        f"Редактирование доклада \"{registration['topic']}\" для спикера {registration['first_name']} {registration['last_name']}.\n"
+        f"Выбери, что ты хочешь изменить:",
+        reply_markup=get_admin_edit_talk_keyboard(registration_id)
+    )
+
+    await callback.answer()
+
+# Admin edit talk topic handler
+@router.callback_query(AdminEditTalkState.waiting_for_field, F.data.startswith("admin_edit_topic_"))
+async def process_admin_edit_topic(callback: CallbackQuery, state: FSMContext):
+    """Handle edit topic button click."""
+    # Extract registration_id from callback data
+    registration_id = int(callback.data.split("_")[3])
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.edit_text(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Store registration_id in state data
+    await state.update_data(registration_id=registration_id)
+
+    # Set state to waiting for topic
+    await state.set_state(AdminEditTalkState.waiting_for_topic)
+
+    # Show current topic and ask for new one
+    await callback.message.edit_text(
+        f"Текущая тема: {registration['topic']}\n\n"
+        f"Введи новую тему доклада:",
+        reply_markup=None
+    )
+
+    await callback.answer()
+
+# Admin edit talk description handler
+@router.callback_query(AdminEditTalkState.waiting_for_field, F.data.startswith("admin_edit_description_"))
+async def process_admin_edit_description(callback: CallbackQuery, state: FSMContext):
+    """Handle edit description button click."""
+    # Extract registration_id from callback data
+    registration_id = int(callback.data.split("_")[3])
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.edit_text(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Store registration_id in state data
+    await state.update_data(registration_id=registration_id)
+
+    # Set state to waiting for description
+    await state.set_state(AdminEditTalkState.waiting_for_description)
+
+    # Show current description and ask for new one
+    await callback.message.edit_text(
+        f"Текущее описание: {registration['description']}\n\n"
+        f"Введи новое описание доклада:",
+        reply_markup=None
+    )
+
+    await callback.answer()
+
+# Admin edit talk presentation handler
+@router.callback_query(AdminEditTalkState.waiting_for_field, F.data.startswith("admin_edit_presentation_"))
+async def process_admin_edit_presentation(callback: CallbackQuery, state: FSMContext):
+    """Handle edit presentation button click."""
+    # Extract registration_id from callback data
+    registration_id = int(callback.data.split("_")[3])
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.edit_text(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Store registration_id in state data
+    await state.update_data(registration_id=registration_id)
+
+    # Set state to waiting for presentation
+    await state.set_state(AdminEditTalkState.waiting_for_presentation)
+
+    # Show current presentation status and ask for new one
+    current_status = "Да" if registration["has_presentation"] else "Нет"
+    await callback.message.edit_text(
+        f"Текущий статус презентации: {current_status}\n\n"
+        f"Будет ли у спикера презентация?",
+        reply_markup=get_presentation_keyboard()
+    )
+
+    await callback.answer()
+
+# Process new topic for admin edit
+@router.message(AdminEditTalkState.waiting_for_topic)
+async def process_admin_new_topic(message: Message, state: FSMContext):
+    """Process new topic input from admin."""
+    # Get data from state
+    data = await state.get_data()
+    registration_id = data.get("registration_id")
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await message.answer(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        return
+
+    # Get new topic
+    new_topic = message.text.strip()
+
+    # Validate topic
+    if not new_topic:
+        await message.answer(
+            "Тема не может быть пустой. Пожалуйста, введи тему доклада:",
+            reply_markup=None
+        )
+        return
+
+    # Update registration with new topic
+    await update_registration(registration_id, topic=new_topic)
+
+    # Get updated registration
+    updated_registration = await get_registration(registration_id)
+
+    # Set state to confirmation
+    await state.set_state(AdminEditTalkState.confirmation)
+
+    # Show confirmation
+    await message.answer(
+        f"Тема доклада успешно обновлена!\n\n"
+        f"Новая тема: {updated_registration['topic']}\n\n"
+        f"Хочешь отредактировать что-то еще?",
+        reply_markup=get_admin_edit_talk_keyboard(registration_id)
+    )
+
+# Process new description for admin edit
+@router.message(AdminEditTalkState.waiting_for_description)
+async def process_admin_new_description(message: Message, state: FSMContext):
+    """Process new description input from admin."""
+    # Get data from state
+    data = await state.get_data()
+    registration_id = data.get("registration_id")
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await message.answer(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        return
+
+    # Get new description
+    new_description = message.text.strip()
+
+    # Validate description
+    if not new_description:
+        await message.answer(
+            "Описание не может быть пустым. Пожалуйста, введи описание доклада:",
+            reply_markup=None
+        )
+        return
+
+    # Update registration with new description
+    await update_registration(registration_id, description=new_description)
+
+    # Get updated registration
+    updated_registration = await get_registration(registration_id)
+
+    # Set state to confirmation
+    await state.set_state(AdminEditTalkState.confirmation)
+
+    # Show confirmation
+    await message.answer(
+        f"Описание доклада успешно обновлено!\n\n"
+        f"Новое описание: {updated_registration['description']}\n\n"
+        f"Хочешь отредактировать что-то еще?",
+        reply_markup=get_admin_edit_talk_keyboard(registration_id)
+    )
+
+# Process new presentation status for admin edit
+@router.callback_query(AdminEditTalkState.waiting_for_presentation, F.data.startswith("presentation_"))
+async def process_admin_new_presentation(callback: CallbackQuery, state: FSMContext):
+    """Process new presentation status input from admin."""
+    # Get data from state
+    data = await state.get_data()
+    registration_id = data.get("registration_id")
+
+    # Get registration details
+    registration = await get_registration(registration_id)
+
+    if not registration:
+        await callback.message.edit_text(
+            "Регистрация не найдена.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Get new presentation status
+    has_presentation = callback.data == "presentation_yes"
+
+    # Update registration with new presentation status
+    await update_registration(registration_id, has_presentation=has_presentation)
+
+    # Get updated registration
+    updated_registration = await get_registration(registration_id)
+
+    # Set state to confirmation
+    await state.set_state(AdminEditTalkState.confirmation)
+
+    # Show confirmation
+    current_status = "Да" if updated_registration["has_presentation"] else "Нет"
+    await callback.message.edit_text(
+        f"Статус презентации успешно обновлен!\n\n"
+        f"Новый статус: {current_status}\n\n"
+        f"Хочешь отредактировать что-то еще?",
+        reply_markup=get_admin_edit_talk_keyboard(registration_id)
+    )
+
+    await callback.answer()
+
+# Back to admin speakers handler
+@router.callback_query(F.data == "back_to_admin_speakers")
+async def process_back_to_admin_speakers(callback: CallbackQuery, state: FSMContext):
+    """Handle back to admin speakers button click."""
+    # Get data from state
+    data = await state.get_data()
+    event_id = data.get("event_id")
+
+    # Get event details
+    event = await get_event(event_id)
+
+    if not event:
+        await callback.message.edit_text(
+            "Мероприятие не найдено.",
+            reply_markup=get_admin_keyboard()
+        )
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.answer()
+        return
+
+    # Get speakers for this event
+    speakers = await get_event_speakers(event_id)
+
+    # Set state to waiting for speaker
+    await state.set_state(AdminEditTalkState.waiting_for_speaker)
+
+    # Show speakers
+    await callback.message.edit_text(
+        f"Выбери спикера, чей доклад хочешь отредактировать для мероприятия \"{event['title']}\":",
+        reply_markup=get_admin_speaker_list_keyboard(speakers, event_id)
     )
 
     await callback.answer()
