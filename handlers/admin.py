@@ -501,7 +501,7 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                             registration["event_id"],
                             registration["role"]
                         )
-                        logger.info(f"Sent waitlist notification to user {next_waitlist['user_id']} after admin removal")
+                        logger.warning(f"Sent waitlist notification to user {next_waitlist['user_id']} after admin removal")
                 else:
                     # Registration not found
                     logger.error(f"Registration {registration_id} not found")
@@ -603,7 +603,7 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                             role
                         )
                         notified_count += 1
-                        logger.info(f"Sent waitlist notification to user {entry['user_id']} after slot increase")
+                        logger.warning(f"Sent waitlist notification to user {entry['user_id']} after slot increase")
 
                 # Set state to waiting for admin action
                 await state.set_state(AdminState.waiting_for_action)
@@ -1922,7 +1922,7 @@ async def process_admin_export_db(callback: CallbackQuery, state: FSMContext):
         )
 
         # Log the export
-        logger.info(f"Database exported by admin {user_id}")
+        logger.warning(f"Database exported by admin {user_id}")
 
     except Exception as e:
         # Log the error
@@ -1959,7 +1959,7 @@ async def export_database_auto():
         )
 
         # Log the export
-        logger.info(f"Database automatically exported to backup chat {BACKUP_CHAT_ID}")
+        logger.warning(f"Database automatically exported to backup chat {BACKUP_CHAT_ID}")
 
     except Exception as e:
         # Log the error

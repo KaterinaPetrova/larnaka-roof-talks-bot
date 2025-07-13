@@ -28,7 +28,7 @@ async def send_registration_confirmation(bot: Bot, user_id: int, event_id: int, 
 
     try:
         await bot.send_message(user_id, message)
-        logger.info(f"Sent registration confirmation to user {user_id} for event {event_id}")
+        logger.warning(f"Sent registration confirmation to user {user_id} for event {event_id}")
     except Exception as e:
         log_exception(
             exception=e,
@@ -53,7 +53,7 @@ async def send_waitlist_confirmation(bot: Bot, user_id: int, event_id: int, role
 
     try:
         await bot.send_message(user_id, message)
-        logger.info(f"Sent waitlist confirmation to user {user_id} for event {event_id}")
+        logger.warning(f"Sent waitlist confirmation to user {user_id} for event {event_id}")
     except Exception as e:
         log_exception(
             exception=e,
@@ -86,7 +86,7 @@ async def send_waitlist_notification(bot: Bot, user_id: int, waitlist_id: int, e
         notified_at = datetime.now().isoformat()
         await update_waitlist_status(waitlist_id, "notified", notified_at)
 
-        logger.info(f"Sent waitlist notification to user {user_id} for event {event_id}")
+        logger.warning(f"Sent waitlist notification to user {user_id} for event {event_id}")
     except Exception as e:
         log_exception(
             exception=e,
@@ -122,7 +122,7 @@ async def send_talk_update_confirmation(bot: Bot, user_id: int, registration_id:
 
     try:
         await bot.send_message(user_id, message)
-        logger.info(f"Sent talk update confirmation to user {user_id} for registration {registration_id}")
+        logger.warning(f"Sent talk update confirmation to user {user_id} for registration {registration_id}")
     except Exception as e:
         log_exception(
             exception=e,
@@ -149,7 +149,7 @@ async def send_cancellation_confirmation(bot: Bot, user_id: int, event_id: int, 
 
     try:
         await bot.send_message(user_id, message)
-        logger.info(f"Sent cancellation confirmation to user {user_id} for event {event_id}")
+        logger.warning(f"Sent cancellation confirmation to user {user_id} for event {event_id}")
     except Exception as e:
         log_exception(
             exception=e,
@@ -198,7 +198,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
                 # Send expiration notification to the user
                 try:
                     await bot.send_message(entry["user_id"], WAITLIST_EXPIRED_MESSAGE)
-                    logger.info(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
+                    logger.warning(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
                 except Exception as e:
                     logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
 
@@ -215,9 +215,9 @@ async def check_expired_waitlist_notifications(bot: Bot):
                         next_waitlist["role"]
                     )
 
-                    logger.info(f"Notified next person {next_waitlist['user_id']} on waitlist for event {next_waitlist['event_id']} after expiration")
+                    logger.warning(f"Notified next person {next_waitlist['user_id']} on waitlist for event {next_waitlist['event_id']} after expiration")
 
-                logger.info(f"Expired waitlist entry {entry['id']} for user {entry['user_id']} and event {entry['event_id']}")
+                logger.warning(f"Expired waitlist entry {entry['id']} for user {entry['user_id']} and event {entry['event_id']}")
 
             await db.commit()
 
@@ -302,7 +302,7 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             )
 
         await bot.send_message(NOTIFICATION_CHAT_ID, message)
-        logger.info(f"Sent admin notification about {notification_type} for event {event_id}")
+        logger.warning(f"Sent admin notification about {notification_type} for event {event_id}")
     except Exception as e:
         log_exception(
             exception=e,

@@ -30,7 +30,7 @@ async def cmd_start(message: Message, state: FSMContext):
     username = message.from_user.username
 
     chat_id = message.chat.id
-    logger.info(f"User {user_id} (@{username}) started the bot in chat {chat_id}")
+    logger.warning(f"User {user_id} (@{username}) started the bot in chat {chat_id}")
 
     # Clear any previous state
     await state.clear()

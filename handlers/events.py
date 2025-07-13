@@ -313,7 +313,7 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
                 waitlist_entry["role"]
             )
 
-            logger.info(f"Speaker {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']}")
+            logger.warning(f"Speaker {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']}")
         else:
             # For participants, show payment step first
             # Store waitlist entry data in state
@@ -340,7 +340,7 @@ async def process_accept_waitlist(callback: CallbackQuery, state: FSMContext):
                 parse_mode="HTML"
             )
 
-            logger.info(f"Participant {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']} - waiting for payment")
+            logger.warning(f"Participant {waitlist_entry['user_id']} accepted waitlist spot for event {waitlist_entry['event_id']} - waiting for payment")
     except Exception as e:
         # Get data from state for context
         state_data = await state.get_data()
@@ -445,7 +445,7 @@ async def process_waitlist_payment_confirmation(message: Message, state: FSMCont
         # Clear state
         await state.clear()
 
-        logger.info(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
+        logger.warning(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
 
     except Exception as e:
         # Get data from state for context
@@ -531,7 +531,7 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
         # Clear state
         await state.clear()
 
-        logger.info(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
+        logger.warning(f"Participant {waitlist_entry['user_id']} completed payment for event {waitlist_entry['event_id']}")
 
     except Exception as e:
         # Get data from state for context
@@ -617,9 +617,9 @@ async def process_decline_waitlist(callback: CallbackQuery, state: FSMContext):
                 next_waitlist["role"]
             )
 
-            logger.info(f"Notified next person {next_waitlist['user_id']} on waitlist for event {next_waitlist['event_id']}")
+            logger.warning(f"Notified next person {next_waitlist['user_id']} on waitlist for event {next_waitlist['event_id']}")
 
-        logger.info(f"User {waitlist_entry['user_id']} declined waitlist spot for event {waitlist_entry['event_id']}")
+        logger.warning(f"User {waitlist_entry['user_id']} declined waitlist spot for event {waitlist_entry['event_id']}")
     except Exception as e:
         # Get data from state for context
         state_data = await state.get_data()
@@ -768,7 +768,7 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
         )
 
         # Log the cancellation
-        logger.info(f"Sent cancellation confirmation to user {callback.from_user.id} for event {registration['event_id']}")
+        logger.warning(f"Sent cancellation confirmation to user {callback.from_user.id} for event {registration['event_id']}")
 
     except Exception as e:
         # Get data from state for context
