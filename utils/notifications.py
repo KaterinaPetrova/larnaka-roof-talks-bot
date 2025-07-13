@@ -4,6 +4,7 @@ from aiogram import Bot
 from config import WAITLIST_TIMEOUT_HOURS, NOTIFICATION_CHAT_ID
 from database.db import get_event, get_registration, update_waitlist_status
 from keyboards.keyboards import get_waitlist_notification_keyboard
+from utils import log_exception
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -174,9 +175,12 @@ async def check_expired_waitlist_notifications(bot: Bot):
 
     logger = logging.getLogger(__name__)
 
+    logger.warning(f"Starting waitlist scheduler check at {datetime.now().isoformat()}")
+
     try:
         # Calculate the expiration time
         expiration_time = (datetime.now() - timedelta(hours=WAITLIST_TIMEOUT_HOURS)).isoformat()
+        logger.warning(f"Checking for waitlist notifications that expired before {expiration_time}")
 
         async with aiosqlite.connect(DB_NAME) as db:
             db.row_factory = aiosqlite.Row
@@ -187,6 +191,8 @@ async def check_expired_waitlist_notifications(bot: Bot):
                 (expiration_time,)
             )
             expired_entries = await cursor.fetchall()
+
+            logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
 
             for entry in expired_entries:
                 # Update status to expired
@@ -221,6 +227,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
 
             await db.commit()
 
+            logger.warning(f"Waitlist scheduler check completed. Processed {len(expired_entries)} expired notifications.")
             return len(expired_entries)
     except Exception as e:
         log_exception(
@@ -230,6 +237,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
             },
             message="Error checking expired waitlist notifications"
         )
+        logger.warning(f"Waitlist scheduler check failed with error: {str(e)}")
         return 0
 
 async def send_admin_notification(bot: Bot, notification_type: str, event_id: int, user_info: dict, role: str = None, additional_info: str = None):

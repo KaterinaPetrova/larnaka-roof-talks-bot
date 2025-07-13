@@ -306,6 +306,7 @@ async def count_active_registrations(event_id, role):
 # Waitlist operations
 async def add_to_waitlist(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None, username=None):
     """Add a user to the waitlist."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         added_at = datetime.now().isoformat()
         await db.execute(
@@ -315,41 +316,70 @@ async def add_to_waitlist(event_id, user_id, first_name, last_name, role, status
             (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at)
         )
         await db.commit()
+        logger.warning(f"Added user {user_id} to waitlist for event {event_id} with role {role} and status {status}")
 
 async def get_next_from_waitlist(event_id, role):
     """Get the next person from the waitlist for a specific event and role."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT * FROM waitlist WHERE event_id = ? AND role = ? AND status = 'active' ORDER BY added_at LIMIT 1",
             (event_id, role)
         )
-        return await cursor.fetchone()
+        result = await cursor.fetchone()
+        if result:
+            logger.warning(f"Found next person on waitlist for event {event_id} with role {role}: user {result['user_id']}")
+        else:
+            logger.warning(f"No one found on waitlist for event {event_id} with role {role}")
+        return result
 
 async def update_waitlist_status(waitlist_id, status, notified_at=None):
     """Update waitlist status."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
+        # Get the waitlist entry first to include user_id and event_id in the log
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT user_id, event_id FROM waitlist WHERE id = ?", (waitlist_id,))
+        entry = await cursor.fetchone()
+
         if notified_at:
             await db.execute(
                 "UPDATE waitlist SET status = ?, notified_at = ? WHERE id = ?",
                 (status, notified_at, waitlist_id)
             )
+            if entry:
+                logger.warning(f"Updated waitlist entry {waitlist_id} for user {entry['user_id']} and event {entry['event_id']} to status '{status}' with notified_at {notified_at}")
+            else:
+                logger.warning(f"Updated waitlist entry {waitlist_id} to status '{status}' with notified_at {notified_at}")
         else:
             await db.execute(
                 "UPDATE waitlist SET status = ? WHERE id = ?",
                 (status, waitlist_id)
             )
+            if entry:
+                logger.warning(f"Updated waitlist entry {waitlist_id} for user {entry['user_id']} and event {entry['event_id']} to status '{status}'")
+            else:
+                logger.warning(f"Updated waitlist entry {waitlist_id} to status '{status}'")
+
         await db.commit()
 
 async def get_waitlist_entry(waitlist_id):
     """Get waitlist entry by ID."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM waitlist WHERE id = ?", (waitlist_id,))
-        return await cursor.fetchone()
+        result = await cursor.fetchone()
+        if result:
+            logger.warning(f"Retrieved waitlist entry {waitlist_id} for user {result['user_id']} and event {result['event_id']} with status '{result['status']}'")
+        else:
+            logger.warning(f"Waitlist entry with ID {waitlist_id} not found")
+        return result
 
 async def get_user_waitlist(user_id):
     """Get all waitlist entries for a user."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -359,10 +389,13 @@ async def get_user_waitlist(user_id):
                ORDER BY e.date''',
             (user_id,)
         )
-        return await cursor.fetchall()
+        result = await cursor.fetchall()
+        logger.warning(f"Retrieved {len(result)} waitlist entries for user {user_id}")
+        return result
 
 async def get_event_waitlist(event_id, role=None):
     """Get all waitlist entries for an event, optionally filtered by role."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
 
@@ -377,10 +410,16 @@ async def get_event_waitlist(event_id, role=None):
                 (event_id,)
             )
 
-        return await cursor.fetchall()
+        result = await cursor.fetchall()
+        if role:
+            logger.warning(f"Retrieved {len(result)} waitlist entries for event {event_id} with role {role}")
+        else:
+            logger.warning(f"Retrieved {len(result)} waitlist entries for event {event_id}")
+        return result
 
 async def remove_from_waitlist(waitlist_id):
     """Remove a user from the waitlist."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         # First get the waitlist entry to check if it exists
         db.row_factory = aiosqlite.Row
@@ -388,16 +427,19 @@ async def remove_from_waitlist(waitlist_id):
         waitlist_entry = await cursor.fetchone()
 
         if not waitlist_entry:
+            logger.warning(f"Attempted to remove non-existent waitlist entry with ID {waitlist_id}")
             return False
 
         # Update status to removed
         await db.execute("UPDATE waitlist SET status = 'removed' WHERE id = ?", (waitlist_id,))
         await db.commit()
 
+        logger.warning(f"Removed user {waitlist_entry['user_id']} from waitlist for event {waitlist_entry['event_id']} (waitlist ID: {waitlist_id})")
         return True
 
 async def is_on_waitlist(event_id, user_id, role=None):
     """Check if a user is already on the waitlist for an event."""
+    logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         if role:
             cursor = await db.execute(
@@ -411,7 +453,14 @@ async def is_on_waitlist(event_id, user_id, role=None):
             )
 
         result = await cursor.fetchone()
-        return bool(result)
+        is_on_waitlist = bool(result)
+
+        if role:
+            logger.warning(f"Checked if user {user_id} is on waitlist for event {event_id} with role {role}: {is_on_waitlist}")
+        else:
+            logger.warning(f"Checked if user {user_id} is on waitlist for event {event_id}: {is_on_waitlist}")
+
+        return is_on_waitlist
 
 # Admin operations
 async def add_admin(user_id):
