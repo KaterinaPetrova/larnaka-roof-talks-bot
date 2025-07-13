@@ -499,7 +499,8 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
             waitlist_entry["topic"],
             waitlist_entry["description"],
             waitlist_entry["has_presentation"],
-            waitlist_entry["comments"]
+            waitlist_entry["comments"],
+            waitlist_entry["username"]  # Include username parameter
         )
 
         # Update waitlist status to accepted
@@ -510,8 +511,8 @@ async def process_waitlist_payment_callback(callback: CallbackQuery, state: FSMC
         await send_registration_confirmation(
             callback.message.bot,
             callback.from_user.id,
-            data.get("event_id"),
-            data.get("role")
+            waitlist_entry["event_id"],  # Use waitlist_entry["event_id"] instead of data.get("event_id")
+            waitlist_entry["role"]  # Use waitlist_entry["role"] instead of data.get("role")
         )
 
 

@@ -13,7 +13,15 @@ async def send_registration_confirmation(bot: Bot, user_id: int, event_id: int, 
     """Send confirmation message after successful registration."""
     event = await get_event(event_id)
 
-    if role == "speaker":
+    # Handle case when event is None
+    if not event:
+        logger.error(f"Event {event_id} not found when sending registration confirmation to user {user_id}")
+        message = (
+            f"Ты успешно зарегистрирован(а)! 🎉\n"
+            f"Мы напомним тебе ближе к дате мероприятия.\n"
+            f"До встречи на крыше!"
+        )
+    elif role == "speaker":
         message = (
             f"Ты зарегистрирован(а) как спикер! 🎉\n"
             f"Мероприятие: {event['title']} — {event['date']}\n"
@@ -166,74 +174,122 @@ async def send_cancellation_confirmation(bot: Bot, user_id: int, event_id: int, 
 
 
 async def check_expired_waitlist_notifications(bot: Bot):
-    """Check for expired waitlist notifications and update their status."""
-    from database.db import get_next_from_waitlist
-    import aiosqlite
-    from config import DB_NAME, WAITLIST_TIMEOUT_HOURS
+    """Check for expired waitlist notifications and update their status.
+
+    First, process all expired waitlist entries by updating their status and sending notifications.
+    Then, check for available spots in each event/role and notify users from the waitlist.
+    """
+    from database.db import (
+        get_expired_waitlist_notifications, 
+        update_expired_waitlist_entry,
+        get_available_spots,
+        get_next_from_waitlist,
+        get_event_waitlist,
+        count_notified_waitlist_users
+    )
+    from config import WAITLIST_TIMEOUT_HOURS
     from datetime import datetime, timedelta
     from utils.text_constants import WAITLIST_EXPIRED_MESSAGE
+    from collections import defaultdict
 
     logger = logging.getLogger(__name__)
 
     logger.warning(f"Starting waitlist scheduler check at {datetime.now().isoformat()}")
+    processed_count = 0
 
     try:
         # Calculate the expiration time
         expiration_time = (datetime.now() - timedelta(hours=WAITLIST_TIMEOUT_HOURS)).isoformat()
         logger.warning(f"Checking for waitlist notifications that expired before {expiration_time}")
 
-        async with aiosqlite.connect(DB_NAME) as db:
-            db.row_factory = aiosqlite.Row
+        # Step 1: Get all expired waitlist entries
+        expired_entries = await get_expired_waitlist_notifications(expiration_time)
+        logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
 
-            # Find all expired waitlist notifications
-            cursor = await db.execute(
-                "SELECT * FROM waitlist WHERE status = 'notified' AND notified_at < ?",
-                (expiration_time,)
-            )
-            expired_entries = await cursor.fetchall()
+        # Track events and roles that had expirations
+        affected_events = defaultdict(set)
 
-            logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
+        # Step 2: Process each expired entry
+        for entry in expired_entries:
+            # Update status to expired
+            success = await update_expired_waitlist_entry(entry["id"])
+            if not success:
+                logger.error(f"Failed to update waitlist entry {entry['id']} to expired")
+                continue
 
-            for entry in expired_entries:
-                # Update status to expired
-                await db.execute(
-                    "UPDATE waitlist SET status = 'expired' WHERE id = ?",
-                    (entry["id"],)
-                )
+            # Send expiration notification to the user
+            try:
+                await bot.send_message(entry["user_id"], WAITLIST_EXPIRED_MESSAGE)
+                logger.warning(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
+            except Exception as e:
+                logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
 
-                # Send expiration notification to the user
-                try:
-                    await bot.send_message(entry["user_id"], WAITLIST_EXPIRED_MESSAGE)
-                    logger.warning(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
-                except Exception as e:
-                    logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
+            # Track this event/role combination for later processing
+            affected_events[entry["event_id"]].add(entry["role"])
 
-                # Check if there's another person on the waitlist
-                next_waitlist = await get_next_from_waitlist(entry["event_id"], entry["role"])
+            logger.warning(f"Expired waitlist entry {entry['id']} for user {entry['user_id']} and event {entry['event_id']}")
+            processed_count += 1
 
-                if next_waitlist:
-                    # Send notification to the next person on the waitlist
-                    await send_waitlist_notification(
-                        bot,
-                        next_waitlist["user_id"],
-                        next_waitlist["id"],
-                        next_waitlist["event_id"],
-                        next_waitlist["role"]
-                    )
+        # Step 3: For each affected event/role, check available spots and notify waitlisted users
+        for event_id, roles in affected_events.items():
+            for role in roles:
+                # Check how many spots are available
+                available_spots = await get_available_spots(event_id, role)
 
-                    logger.warning(f"Notified next person {next_waitlist['user_id']} on waitlist for event {next_waitlist['event_id']} after expiration")
+                if available_spots <= 0:
+                    logger.warning(f"No available spots for event {event_id} with role {role}")
+                    continue
 
-                logger.warning(f"Expired waitlist entry {entry['id']} for user {entry['user_id']} and event {entry['event_id']}")
+                # Get count of already notified users
+                already_notified_count = await count_notified_waitlist_users(event_id, role)
 
-            await db.commit()
+                # Calculate actual available spots considering already notified users
+                actual_available_spots = max(0, available_spots - already_notified_count)
 
-            logger.warning(f"Waitlist scheduler check completed. Processed {len(expired_entries)} expired notifications.")
-            return len(expired_entries)
+                logger.warning(f"Found {available_spots} available spots for event {event_id} with role {role}, "
+                              f"with {already_notified_count} already notified users. "
+                              f"Actual available spots: {actual_available_spots}")
+
+                if actual_available_spots <= 0:
+                    logger.warning(f"No actual available spots for event {event_id} with role {role} after considering notified users")
+                    continue
+
+                # Get users from waitlist for this event and role
+                waitlist_entries = await get_event_waitlist(event_id, role)
+
+                # Notify up to actual_available_spots users
+                notified_count = 0
+                for entry in waitlist_entries:
+                    if notified_count >= actual_available_spots:
+                        break
+
+                    # Only notify users with 'active' status
+                    if entry["status"] != "active":
+                        continue
+
+                    # Send notification to the user
+                    try:
+                        await send_waitlist_notification(
+                            bot,
+                            entry["user_id"],
+                            entry["id"],
+                            entry["event_id"],
+                            entry["role"]
+                        )
+                        logger.warning(f"Notified user {entry['user_id']} from waitlist for event {entry['event_id']} with role {entry['role']}")
+                        notified_count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to send waitlist notification to user {entry['user_id']}: {str(e)}")
+
+                logger.warning(f"Notified {notified_count} users from waitlist for event {event_id} with role {role} (out of {actual_available_spots} actual available spots)")
+
+        logger.warning(f"Waitlist scheduler check completed. Processed {processed_count} expired notifications.")
+        return processed_count
     except Exception as e:
         log_exception(
             exception=e,
             context={
-                "expiration_time": expiration_time
+                "expiration_time": expiration_time if 'expiration_time' in locals() else None
             },
             message="Error checking expired waitlist notifications"
         )

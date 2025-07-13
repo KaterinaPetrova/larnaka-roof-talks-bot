@@ -309,14 +309,36 @@ async def add_to_waitlist(event_id, user_id, first_name, last_name, role, status
     logger = logging.getLogger(__name__)
     async with aiosqlite.connect(DB_NAME) as db:
         added_at = datetime.now().isoformat()
-        await db.execute(
-            '''INSERT INTO waitlist 
-               (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at)
+
+        # Check if user already has an entry in the waitlist for this event and role
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, status FROM waitlist WHERE event_id = ? AND user_id = ? AND role = ?",
+            (event_id, user_id, role)
         )
-        await db.commit()
-        logger.warning(f"Added user {user_id} to waitlist for event {event_id} with role {role} and status {status}")
+        existing_entry = await cursor.fetchone()
+
+        if existing_entry:
+            # User already has an entry, update it instead of inserting a new one
+            await db.execute(
+                '''UPDATE waitlist 
+                   SET status = ?, first_name = ?, last_name = ?, username = ?, 
+                       topic = ?, description = ?, has_presentation = ?, comments = ?, added_at = ? 
+                   WHERE id = ?''',
+                (status, first_name, last_name, username, topic, description, has_presentation, comments, added_at, existing_entry['id'])
+            )
+            await db.commit()
+            logger.warning(f"Updated user {user_id} in waitlist for event {event_id} with role {role} from status '{existing_entry['status']}' to '{status}'")
+        else:
+            # No existing entry, insert a new one
+            await db.execute(
+                '''INSERT INTO waitlist 
+                   (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (event_id, user_id, first_name, last_name, username, role, status, topic, description, has_presentation, comments, added_at)
+            )
+            await db.commit()
+            logger.warning(f"Added user {user_id} to waitlist for event {event_id} with role {role} and status {status}")
 
 async def get_next_from_waitlist(event_id, role):
     """Get the next person from the waitlist for a specific event and role."""
@@ -496,6 +518,111 @@ async def get_event_speakers(event_id):
             (event_id,)
         )
         return await cursor.fetchall()
+
+async def get_expired_waitlist_notifications(expiration_time):
+    """Get all expired waitlist notifications.
+
+    Args:
+        expiration_time (str): ISO format datetime string representing the expiration time
+
+    Returns:
+        list: List of expired waitlist entries
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Find all expired waitlist notifications
+        cursor = await db.execute(
+            "SELECT * FROM waitlist WHERE status = 'notified' AND notified_at < ?",
+            (expiration_time,)
+        )
+        expired_entries = await cursor.fetchall()
+
+        logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
+        return expired_entries
+
+async def update_expired_waitlist_entry(entry_id):
+    """Update the status of an expired waitlist entry to 'expired'.
+
+    Args:
+        entry_id (int): ID of the waitlist entry to update
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        try:
+            # Update status to expired
+            await db.execute(
+                "UPDATE waitlist SET status = 'expired' WHERE id = ?",
+                (entry_id,)
+            )
+            await db.commit()
+            logger.warning(f"Updated waitlist entry {entry_id} status to 'expired'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update waitlist entry {entry_id}: {str(e)}")
+            return False
+
+async def get_available_spots(event_id, role):
+    """Get the number of available spots for a specific event and role.
+
+    Args:
+        event_id (int): ID of the event
+        role (str): Role to check ('speaker' or 'participant')
+
+    Returns:
+        int: Number of available spots, or 0 if none available
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Get event details to find max slots
+        cursor = await db.execute("SELECT * FROM events WHERE id = ?", (event_id,))
+        event = await cursor.fetchone()
+
+        if not event:
+            logger.error(f"Event {event_id} not found when checking available spots")
+            return 0
+
+        # Get max slots based on role
+        max_slots = event["max_speakers"] if role == "speaker" else event["max_participants"]
+
+        # Count active registrations
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM registrations WHERE event_id = ? AND role = ? AND status = 'active'",
+            (event_id, role)
+        )
+        active_count = (await cursor.fetchone())[0]
+
+        # Calculate available spots
+        available_spots = max(0, max_slots - active_count)
+        logger.warning(f"Event {event_id} has {available_spots} available spots for role {role}")
+
+        return available_spots
+
+async def count_notified_waitlist_users(event_id, role):
+    """Count the number of users in the waitlist with 'notified' status for a specific event and role.
+
+    Args:
+        event_id (int): ID of the event
+        role (str): Role to check ('speaker' or 'participant')
+
+    Returns:
+        int: Number of notified users in the waitlist
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = ? AND status = 'notified'",
+            (event_id, role)
+        )
+        notified_count = (await cursor.fetchone())[0]
+        logger.warning(f"Event {event_id} has {notified_count} notified users in waitlist for role {role}")
+        return notified_count
 
 async def get_event_statistics(event_id):
     """Get statistics for an event."""
