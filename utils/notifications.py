@@ -74,7 +74,7 @@ async def send_waitlist_notification(bot: Bot, user_id: int, waitlist_id: int, e
         f"Появилось свободное место на мероприятии {event['title']} — {event['date']}!\n"
         f"Роль: {'Спикер' if role == 'speaker' else 'Слушатель'}\n"
         f"Хочешь участвовать?\n\n"
-        f"У тебя есть 2 часа на ответ."
+        f"У тебя есть {WAITLIST_TIMEOUT_HOURS} часа на ответ."
     )
 
     keyboard = get_waitlist_notification_keyboard(waitlist_id)

@@ -25,7 +25,7 @@ ROLE_SPEAKER = "speaker"
 ROLE_PARTICIPANT = "participant"
 
 # Waitlist timeout in hours
-WAITLIST_TIMEOUT_HOURS = 2
+WAITLIST_TIMEOUT_HOURS = 3
 
 # Notification chat ID for admin updates
 NOTIFICATION_CHAT_ID = os.getenv("NOTIFICATION_CHAT_ID")
