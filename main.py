@@ -71,6 +71,9 @@ async def main():
     # Log scheduler start
     logging.warning("Scheduler started, checking expired waitlist notifications every 30 minutes and exporting database daily at 10:00")
 
+    # Immediately check expired waitlist notifications
+    await check_expired_waitlist_notifications(bot)
+
     # Start polling
     await dp.start_polling(bot, skip_updates=True)
 

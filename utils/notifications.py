@@ -4,7 +4,7 @@ from aiogram import Bot
 from config import WAITLIST_TIMEOUT_HOURS, NOTIFICATION_CHAT_ID
 from database.db import get_event, get_registration, update_waitlist_status
 from keyboards.keyboards import get_waitlist_notification_keyboard
-from utils import log_exception
+from utils.logging import log_exception
 
 # Initialize logger
 logger = logging.getLogger(__name__)
