@@ -177,6 +177,8 @@ async def process_admin_event_selection(callback: CallbackQuery, state: FSMConte
 
         for i, participant in enumerate(participants, 1):
             message_text += f"{i}. {participant['first_name']} {participant['last_name']}\n"
+            if participant['username']:
+                message_text += f"   Телеграм: @{participant['username']}\n"
             if participant['comments']:
                 message_text += f"   Комментарий: {participant['comments']}\n"
 
@@ -1341,14 +1343,8 @@ async def process_admin_slot_count_input(message: Message, state: FSMContext):
         active_count = stats['participants']['active']
         role_text = "слушателей"
 
-    # Check if new slot count is less than active registrations
-    if slot_count < active_count:
-        await message.answer(
-            f"Новое количество мест ({slot_count}) меньше, чем количество активных регистраций ({active_count}).\n"
-            f"Пожалуйста, введи число не меньше {active_count}.",
-            reply_markup=None
-        )
-        return
+    # Note: We allow setting slot count less than active registrations
+    # This is intentional to allow admins to reduce capacity even with existing registrations
 
     # Store slot_count in state data
     await state.update_data(slot_count=slot_count)
