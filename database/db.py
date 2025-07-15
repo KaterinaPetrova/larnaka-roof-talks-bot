@@ -624,6 +624,26 @@ async def count_notified_waitlist_users(event_id, role):
         logger.warning(f"Event {event_id} has {notified_count} notified users in waitlist for role {role}")
         return notified_count
 
+async def count_active_waitlist_users(event_id, role):
+    """Count the number of users in the waitlist with 'active' status for a specific event and role.
+
+    Args:
+        event_id (int): ID of the event
+        role (str): Role to check ('speaker' or 'participant')
+
+    Returns:
+        int: Number of active users in the waitlist
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = ? AND status = 'active'",
+            (event_id, role)
+        )
+        active_count = (await cursor.fetchone())[0]
+        logger.warning(f"Event {event_id} has {active_count} active users in waitlist for role {role}")
+        return active_count
+
 async def get_event_statistics(event_id):
     """Get statistics for an event."""
     async with aiosqlite.connect(DB_NAME) as db:
