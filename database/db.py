@@ -669,16 +669,16 @@ async def get_event_statistics(event_id):
         )
         participants_count = (await cursor.fetchone())[0]
 
-        # Count waitlist speakers
+        # Count waitlist speakers (both active and notified)
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = 'speaker' AND status = 'active'",
+            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = 'speaker' AND status IN ('active', 'notified')",
             (event_id,)
         )
         waitlist_speakers = (await cursor.fetchone())[0]
 
-        # Count waitlist participants
+        # Count waitlist participants (both active and notified)
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = 'participant' AND status = 'active'",
+            "SELECT COUNT(*) FROM waitlist WHERE event_id = ? AND role = 'participant' AND status IN ('active', 'notified')",
             (event_id,)
         )
         waitlist_participants = (await cursor.fetchone())[0]
