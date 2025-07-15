@@ -110,6 +110,17 @@ async def process_event_selection(callback: CallbackQuery, state: FSMContext):
     speaker_slots = event["max_speakers"] - speaker_count
     participant_slots = event["max_participants"] - participant_count
 
+    # Check if there are users in the waitlist for each role
+    from database.db import count_notified_waitlist_users, count_active_waitlist_users
+
+    speaker_notified_count = await count_notified_waitlist_users(event_id, ROLE_SPEAKER)
+    speaker_active_count = await count_active_waitlist_users(event_id, ROLE_SPEAKER)
+    speaker_has_waitlist = speaker_notified_count > 0 or speaker_active_count > 0
+
+    participant_notified_count = await count_notified_waitlist_users(event_id, ROLE_PARTICIPANT)
+    participant_active_count = await count_active_waitlist_users(event_id, ROLE_PARTICIPANT)
+    participant_has_waitlist = participant_notified_count > 0 or participant_active_count > 0
+
     # Set state to waiting for role
     await state.set_state(RegistrationState.waiting_for_role)
 
@@ -117,7 +128,7 @@ async def process_event_selection(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await callback.message.answer(
         f"{event['title']}. {REGISTRATION_ROLE_SELECTION}",
-        reply_markup=get_role_keyboard(event_id, speaker_slots, participant_slots)
+        reply_markup=get_role_keyboard(event_id, speaker_slots, participant_slots, speaker_has_waitlist, participant_has_waitlist)
     )
 
     await callback.answer()

@@ -53,15 +53,15 @@ def get_events_keyboard(events, full_events=None, full_speaker_events=None, full
     return keyboard
 
 # Role selection keyboard
-def get_role_keyboard(event_id, speaker_slots, participant_slots):
+def get_role_keyboard(event_id, speaker_slots, participant_slots, speaker_has_waitlist=False, participant_has_waitlist=False):
     """Get keyboard for role selection."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=KEYBOARD_SPEAKER + (KEYBOARD_SPEAKER_SLOTS.format(speaker_slots) if speaker_slots > 0 else KEYBOARD_SPEAKER_WAITLIST), 
+            text=KEYBOARD_SPEAKER + (KEYBOARD_SPEAKER_WAITLIST if speaker_has_waitlist or speaker_slots <= 0 else KEYBOARD_SPEAKER_SLOTS.format(speaker_slots)), 
             callback_data=f"role_{event_id}_{ROLE_SPEAKER}"
         )],
         [InlineKeyboardButton(
-            text=KEYBOARD_PARTICIPANT + (KEYBOARD_PARTICIPANT_SLOTS.format(participant_slots) if participant_slots > 0 else KEYBOARD_PARTICIPANT_WAITLIST),
+            text=KEYBOARD_PARTICIPANT + (KEYBOARD_PARTICIPANT_WAITLIST if participant_has_waitlist or participant_slots <= 0 else KEYBOARD_PARTICIPANT_SLOTS.format(participant_slots)),
             callback_data=f"role_{event_id}_{ROLE_PARTICIPANT}"
         )],
         [InlineKeyboardButton(text=KEYBOARD_BACK, callback_data="back_to_events")]
