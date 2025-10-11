@@ -18,7 +18,7 @@ os.makedirs('logs', exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('logs/bot.log'),

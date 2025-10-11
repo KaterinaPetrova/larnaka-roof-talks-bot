@@ -311,15 +311,23 @@ async def process_admin_event_selection(callback: CallbackQuery, state: FSMConte
             await callback.answer()
             return
 
+        # Prepare safe values for optional fields: sqlite3.Row has no .get
+        description_value = event["description"] if event["description"] is not None else ""
+        # Some old rows may have NULL in is_test; treat None/0 as False
+        try:
+            is_test_value = bool(event["is_test"])  # aiosqlite.Row supports mapping access
+        except (KeyError, IndexError, TypeError):
+            is_test_value = False
+
         text = (
             f"Редактирование мероприятия:\n\n"
             f"📌 {event['title']}\n"
             f"📅 {event['date']}\n"
-            f"🧾 {event.get('description','')}\n"
+            f"🧾 {description_value}\n"
             f"🎤 Места спикеров: {event['max_speakers']}\n"
             f"🙋‍♀️ Места слушателей: {event['max_participants']}\n"
             f"🚦 Статус: {event['status']}\n"
-            f"🧪 Тестовое: {'да' if event.get('is_test') else 'нет'}\n\n"
+            f"🧪 Тестовое: {'да' if is_test_value else 'нет'}\n\n"
             f"Что хочешь изменить?"
         )
         await callback.message.edit_text(text, reply_markup=get_admin_event_edit_keyboard(event_id))
@@ -427,7 +435,7 @@ async def process_admin_message_input(message: Message, state: FSMContext):
     )
 
 # Admin confirmation handler
-@router.callback_query(F.data == "admin_confirm")
+@router.callback_query(AdminState.confirmation, F.data == "admin_confirm")
 async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext):
     """Handle admin confirmation."""
     # Get current state
@@ -2001,3 +2009,173 @@ async def export_database_auto():
             context={"action": "automatic_database_export"},
             message="Error automatically exporting database"
         )
+
+
+# ===== Admin: Create and Edit Event (creation flow) =====
+
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_create_event")
+async def process_admin_create_event(callback: CallbackQuery, state: FSMContext):
+    """Start the create-event wizard."""
+    await state.set_state(AdminCreateEventState.waiting_for_title)
+    await callback.message.edit_text(
+        "Введи название нового мероприятия:",
+        reply_markup=None
+    )
+    await callback.answer()
+
+
+@router.message(AdminCreateEventState.waiting_for_title)
+async def process_create_event_title(message: Message, state: FSMContext):
+    title = (message.text or "").strip()
+    if not title:
+        await message.answer("Название не может быть пустым. Введи название мероприятия:")
+        return
+    await state.update_data(title=title)
+    await state.set_state(AdminCreateEventState.waiting_for_date)
+    await message.answer("Введи дату и время мероприятия (например: 2025-10-15 19:00):")
+
+
+@router.message(AdminCreateEventState.waiting_for_date)
+async def process_create_event_date(message: Message, state: FSMContext):
+    date_text = (message.text or "").strip()
+    # Не валидируем формат жестко — сохраняем как введено
+    await state.update_data(date=date_text)
+    await state.set_state(AdminCreateEventState.waiting_for_description)
+    await message.answer("Краткое описание (или '-' чтобы пропустить):")
+
+
+@router.message(AdminCreateEventState.waiting_for_description)
+async def process_create_event_description(message: Message, state: FSMContext):
+    desc_text = (message.text or "").strip()
+    description = None if desc_text == "-" else desc_text
+    await state.update_data(description=description)
+    await state.set_state(AdminCreateEventState.waiting_for_max_speakers)
+    await message.answer("Сколько мест для спикеров? Введи число:")
+
+
+@router.message(AdminCreateEventState.waiting_for_max_speakers)
+async def process_create_event_max_speakers(message: Message, state: FSMContext):
+    try:
+        value = int((message.text or "").strip())
+        if value <= 0:
+            raise ValueError()
+    except Exception:
+        await message.answer("Пожалуйста, введи положительное число для мест спикеров:")
+        return
+    await state.update_data(max_speakers=value)
+    await state.set_state(AdminCreateEventState.waiting_for_max_participants)
+    await message.answer("Сколько мест для слушателей? Введи число:")
+
+
+@router.message(AdminCreateEventState.waiting_for_max_participants)
+async def process_create_event_max_participants(message: Message, state: FSMContext):
+    try:
+        value = int((message.text or "").strip())
+        if value <= 0:
+            raise ValueError()
+    except Exception:
+        await message.answer("Пожалуйста, введи положительное число для мест слушателей:")
+        return
+    await state.update_data(max_participants=value)
+    await state.set_state(AdminCreateEventState.waiting_for_status)
+    await message.answer("Статус мероприятия? Введи одно из: open / closed / completed (можно по-русски: открыто/закрыто/завершено):")
+
+
+@router.message(AdminCreateEventState.waiting_for_status)
+async def process_create_event_status(message: Message, state: FSMContext):
+    raw = (message.text or "").strip().lower()
+    mapping = {
+        "open": "open", "открыто": "open",
+        "closed": "closed", "закрыто": "closed",
+        "completed": "completed", "завершено": "completed",
+    }
+    status = mapping.get(raw)
+    if not status:
+        await message.answer("Некорректный статус. Введи: open / closed / completed (или по-русски: открыто/закрыто/завершено):")
+        return
+    await state.update_data(status=status)
+    await state.set_state(AdminCreateEventState.waiting_for_is_test)
+    await message.answer("Это тестовое мероприятие? (да/нет):")
+
+
+@router.message(AdminCreateEventState.waiting_for_is_test)
+async def process_create_event_is_test(message: Message, state: FSMContext):
+    raw = (message.text or "").strip().lower()
+    true_set = {"да", "yes", "y", "true", "1"}
+    false_set = {"нет", "no", "n", "false", "0"}
+    if raw in true_set:
+        is_test = True
+    elif raw in false_set:
+        is_test = False
+    else:
+        await message.answer("Ответ не распознан. Напиши 'да' или 'нет':")
+        return
+
+    await state.update_data(is_test=is_test)
+
+    data = await state.get_data()
+    text = (
+        "Проверь данные мероприятия:\n\n"
+        f"📌 Название: {data.get('title')}\n"
+        f"📅 Дата: {data.get('date')}\n"
+        f"🧾 Описание: {data.get('description') or '—'}\n"
+        f"🎤 Места спикеров: {data.get('max_speakers')}\n"
+        f"🙋‍♀️ Места слушателей: {data.get('max_participants')}\n"
+        f"🧪 Тестовое: {'да' if data.get('is_test') else 'нет'}\n"
+        f"🚦 Статус: {data.get('status')}\n\n"
+        "Подтвердить создание?"
+    )
+
+    await state.set_state(AdminCreateEventState.confirmation)
+    await message.answer(text, reply_markup=get_admin_confirmation_keyboard())
+
+
+@router.callback_query(AdminCreateEventState.confirmation, F.data == "admin_confirm")
+async def confirm_create_event(callback: CallbackQuery, state: FSMContext):
+    """Create the event after confirmation."""
+    data = await state.get_data()
+    try:
+        result = await create_event(
+            title=data.get("title"),
+            date=data.get("date"),
+            description=data.get("description"),
+            max_speakers=int(data.get("max_speakers")),
+            max_participants=int(data.get("max_participants")),
+            status=data.get("status"),
+            is_test=bool(data.get("is_test"))
+        )
+        event_id = None
+        if result and isinstance(result, list) and len(result) > 0 and len(result[0]) > 0:
+            event_id = result[0][0]
+
+        await state.set_state(AdminState.waiting_for_action)
+        success_text = "Мероприятие создано успешно."
+        if event_id is not None:
+            success_text += f" ID: {event_id}"
+        await callback.message.edit_text(success_text, reply_markup=get_admin_keyboard())
+    except Exception as e:
+        log_exception(exception=e, context={"data": data}, message="Failed to create event")
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.message.edit_text(f"Не удалось создать мероприятие: {e}", reply_markup=get_admin_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_edit_event")
+async def process_admin_edit_event(callback: CallbackQuery, state: FSMContext):
+    """Choose event to edit."""
+    events = await get_open_events()
+    if not events:
+        await callback.message.edit_text(
+            "Сейчас нет открытых мероприятий.",
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+        return
+
+    await state.set_state(AdminState.waiting_for_event)
+    await state.update_data(action="edit_event")
+    await callback.message.edit_text(
+        "Выбери мероприятие, которое хочешь отредактировать:",
+        reply_markup=get_admin_events_keyboard(events)
+    )
+    await callback.answer()
