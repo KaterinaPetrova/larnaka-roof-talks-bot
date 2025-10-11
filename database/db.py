@@ -219,6 +219,46 @@ async def update_event_slots(event_id, max_speakers=None, max_participants=None)
         logger.info(f"Updated slots for event {event_id}: speakers={max_speakers}, participants={max_participants}")
         return True
 
+async def update_event(event_id, title=None, date=None, description=None, status=None, is_test=None, max_speakers=None, max_participants=None):
+    """Update event fields dynamically based on provided arguments."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        fields = []
+        values = []
+
+        if title is not None:
+            fields.append("title = ?")
+            values.append(title)
+        if date is not None:
+            fields.append("date = ?")
+            values.append(date)
+        if description is not None:
+            fields.append("description = ?")
+            values.append(description)
+        if status is not None:
+            fields.append("status = ?")
+            values.append(status)
+        if is_test is not None:
+            fields.append("is_test = ?")
+            # SQLite uses 0/1 for booleans
+            values.append(1 if bool(is_test) else 0)
+        if max_speakers is not None:
+            fields.append("max_speakers = ?")
+            values.append(int(max_speakers))
+        if max_participants is not None:
+            fields.append("max_participants = ?")
+            values.append(int(max_participants))
+
+        if not fields:
+            logger.info("No fields to update for event %s", event_id)
+            return False
+
+        values.append(event_id)
+        query = f"UPDATE events SET {', '.join(fields)} WHERE id = ?"
+        await db.execute(query, tuple(values))
+        await db.commit()
+        logger.info("Updated event %s with fields: %s", event_id, ', '.join(fields))
+        return True
+
 # Registration operations
 async def register_user(event_id, user_id, first_name, last_name, role, status, topic=None, description=None, has_presentation=None, comments=None, username=None):
     """Register a user for an event."""

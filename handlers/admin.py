@@ -29,7 +29,9 @@ from database.db import (
     cancel_registration,
     get_registration,
     get_event,
-    update_registration
+    update_registration,
+    create_event,
+    update_event
 )
 from keyboards.keyboards import (
     get_admin_keyboard,
@@ -42,14 +44,19 @@ from keyboards.keyboards import (
     get_admin_slot_type_keyboard,
     get_admin_speaker_list_keyboard,
     get_admin_edit_talk_keyboard,
-    get_presentation_keyboard
+    get_presentation_keyboard,
+    get_admin_event_edit_keyboard,
+    get_admin_event_status_keyboard,
+    get_yes_no_keyboard
 )
 from states.states import (
     AdminState,
     StartState,
     AdminAddUserState,
     AdminAddAdminState,
-    AdminEditTalkState
+    AdminEditTalkState,
+    AdminCreateEventState,
+    AdminEditEventState
 )
 from utils.text_constants import (
     PAYMENT_MESSAGE,
@@ -288,6 +295,36 @@ async def process_admin_event_selection(callback: CallbackQuery, state: FSMConte
             message_text,
             reply_markup=get_admin_slot_type_keyboard(event_id)
         )
+
+    elif action == "edit_event":
+        # Store event_id and show edit menu
+        await state.update_data(event_id=event_id)
+        await state.set_state(AdminEditEventState.waiting_for_field)
+
+        event = await get_event(event_id)
+        if not event:
+            await state.set_state(AdminState.waiting_for_action)
+            await callback.message.edit_text(
+                "Мероприятие не найдено.",
+                reply_markup=get_admin_keyboard()
+            )
+            await callback.answer()
+            return
+
+        text = (
+            f"Редактирование мероприятия:\n\n"
+            f"📌 {event['title']}\n"
+            f"📅 {event['date']}\n"
+            f"🧾 {event.get('description','')}\n"
+            f"🎤 Места спикеров: {event['max_speakers']}\n"
+            f"🙋‍♀️ Места слушателей: {event['max_participants']}\n"
+            f"🚦 Статус: {event['status']}\n"
+            f"🧪 Тестовое: {'да' if event.get('is_test') else 'нет'}\n\n"
+            f"Что хочешь изменить?"
+        )
+        await callback.message.edit_text(text, reply_markup=get_admin_event_edit_keyboard(event_id))
+        # Store event_id in state data
+        await state.update_data(event_id=event_id)
 
     await callback.answer()
 

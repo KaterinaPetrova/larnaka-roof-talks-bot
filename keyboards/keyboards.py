@@ -187,6 +187,8 @@ def get_waitlist_notification_keyboard(waitlist_id):
 def get_admin_keyboard():
     """Get the admin menu keyboard."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🆕 Создать мероприятие", callback_data="admin_create_event")],
+        [InlineKeyboardButton(text="🛠️ Редактировать мероприятие", callback_data="admin_edit_event")],
         [InlineKeyboardButton(text="📋 Посмотреть слушателей", callback_data="admin_view_participants")],
         [InlineKeyboardButton(text="👤 Посмотреть спикеров", callback_data="admin_view_speakers")],
         [InlineKeyboardButton(text="📢 Написать всем", callback_data="admin_message_all")],
@@ -289,3 +291,40 @@ def get_admin_edit_talk_keyboard(registration_id):
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_speakers")]
     ])
     return keyboard
+
+# Admin event edit keyboard
+
+def get_admin_event_edit_keyboard(event_id: int):
+    """Get keyboard for editing event fields."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Название", callback_data=f"admin_edit_event_field_{event_id}_title")],
+        [InlineKeyboardButton(text="📅 Дата", callback_data=f"admin_edit_event_field_{event_id}_date")],
+        [InlineKeyboardButton(text="🧾 Описание", callback_data=f"admin_edit_event_field_{event_id}_description")],
+        [InlineKeyboardButton(text="🎤 Места спикеров", callback_data=f"admin_edit_event_field_{event_id}_max_speakers")],
+        [InlineKeyboardButton(text="🙋‍♀️ Места слушателей", callback_data=f"admin_edit_event_field_{event_id}_max_participants")],
+        [InlineKeyboardButton(text="🚦 Статус", callback_data=f"admin_edit_event_field_{event_id}_status")],
+        [InlineKeyboardButton(text="🧪 Тестовое", callback_data=f"admin_edit_event_field_{event_id}_is_test")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_events")]
+    ])
+    return keyboard
+
+
+def get_admin_event_status_keyboard(event_id: int):
+    """Keyboard to pick event status."""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Открыто", callback_data=f"admin_edit_event_status_{event_id}_open")],
+        [InlineKeyboardButton(text="Закрыто", callback_data=f"admin_edit_event_status_{event_id}_closed")],
+        [InlineKeyboardButton(text="Завершено", callback_data=f"admin_edit_event_status_{event_id}_completed")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_edit_event_field_{event_id}_back")]
+    ])
+    return keyboard
+
+
+def get_yes_no_keyboard(yes_callback: str, no_callback: str):
+    """Reusable yes/no keyboard (duplicated signature for type hints)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Да", callback_data=yes_callback),
+            InlineKeyboardButton(text="Нет", callback_data=no_callback),
+        ]
+    ])

@@ -89,3 +89,21 @@ class AdminEditTalkState(StatesGroup):
     waiting_for_description = State()
     waiting_for_presentation = State()
     confirmation = State()
+
+class AdminCreateEventState(StatesGroup):
+    """States for admin creating a new event."""
+    waiting_for_title = State()
+    waiting_for_date = State()
+    waiting_for_description = State()
+    waiting_for_max_speakers = State()
+    waiting_for_max_participants = State()
+    waiting_for_status = State()
+    waiting_for_is_test = State()
+    confirmation = State()
+
+class AdminEditEventState(StatesGroup):
+    """States for admin editing an event."""
+    waiting_for_event = State()
+    waiting_for_field = State()
+    waiting_for_value = State()
+    confirmation = State()
