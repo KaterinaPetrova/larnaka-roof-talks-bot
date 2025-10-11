@@ -2179,3 +2179,201 @@ async def process_admin_edit_event(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_admin_events_keyboard(events)
     )
     await callback.answer()
+
+
+# ===== Admin: Edit Event (field-level handlers) =====
+
+def _format_event_edit_text(event_row) -> str:
+    """Build the event summary text for the edit menu, safely handling NULLs."""
+    description_value = event_row["description"] if event_row["description"] is not None else ""
+    try:
+        is_test_value = bool(event_row["is_test"])
+    except (KeyError, IndexError, TypeError):
+        is_test_value = False
+    return (
+        "Редактирование мероприятия:\n\n"
+        f"📌 {event_row['title']}\n"
+        f"📅 {event_row['date']}\n"
+        f"🧾 {description_value}\n"
+        f"🎤 Места спикеров: {event_row['max_speakers']}\n"
+        f"🙋‍♀️ Места слушателей: {event_row['max_participants']}\n"
+        f"🚦 Статус: {event_row['status']}\n"
+        f"🧪 Тестовое: {'да' if is_test_value else 'нет'}\n\n"
+        "Что хочешь изменить?"
+    )
+
+
+@router.callback_query(AdminEditEventState.waiting_for_field, F.data.startswith("admin_edit_event_field_"))
+async def process_admin_edit_event_field(callback: CallbackQuery, state: FSMContext):
+    """Handle clicking on a particular field in the event edit menu."""
+    parts = callback.data.split("_")
+    # pattern: admin_edit_event_field_{event_id}_{field}
+    try:
+        event_id = int(parts[4])
+        field = parts[5]
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    # Back from a sub-menu -> just re-render the main edit screen
+    if field == "back":
+        event = await get_event(event_id)
+        if not event:
+            await state.set_state(AdminState.waiting_for_action)
+            await callback.message.edit_text("Мероприятие не найдено.", reply_markup=get_admin_keyboard())
+            await callback.answer()
+            return
+        await state.update_data(event_id=event_id)
+        await state.set_state(AdminEditEventState.waiting_for_field)
+        await callback.message.edit_text(_format_event_edit_text(event), reply_markup=get_admin_event_edit_keyboard(event_id))
+        await callback.answer()
+        return
+
+    # Field-specific flows
+    if field == "status":
+        # Show status picker keyboard
+        await state.update_data(event_id=event_id)
+        await state.set_state(AdminEditEventState.waiting_for_field)
+        await callback.message.edit_reply_markup(reply_markup=get_admin_event_status_keyboard(event_id))
+        await callback.answer()
+        return
+
+    if field == "is_test":
+        # Show yes/no picker for is_test
+        yes_cb = f"admin_edit_event_is_test_{event_id}_yes"
+        no_cb = f"admin_edit_event_is_test_{event_id}_no"
+        kb = get_yes_no_keyboard(yes_cb, no_cb)
+        await state.update_data(event_id=event_id)
+        await state.set_state(AdminEditEventState.waiting_for_field)
+        # Replace only the markup to keep the text
+        await callback.message.edit_reply_markup(reply_markup=kb)
+        await callback.answer()
+        return
+
+    # For text/number fields: ask for value via message
+    await state.update_data(event_id=event_id, edit_field=field)
+    await state.set_state(AdminEditEventState.waiting_for_value)
+
+    prompts = {
+        "title": "Введи новое название:",
+        "date": "Введи новую дату/время (формат любой, как хочешь):",
+        "description": "Введи новое описание (или '-' чтобы очистить):",
+        "max_speakers": "Введи новое количество мест для спикеров (целое число):",
+        "max_participants": "Введи новое количество мест для слушателей (целое число):",
+    }
+    await callback.message.edit_text(prompts.get(field, "Введи новое значение:"))
+    await callback.answer()
+
+
+@router.message(AdminEditEventState.waiting_for_value)
+async def process_admin_edit_event_value(message: Message, state: FSMContext):
+    """Receive the new value for the selected field and update the event."""
+    data = await state.get_data()
+    event_id = data.get("event_id")
+    field = data.get("edit_field")
+    if not event_id or not field:
+        await state.set_state(AdminState.waiting_for_action)
+        await message.answer("Произошла ошибка. Попробуй ещё раз.", reply_markup=get_admin_keyboard())
+        return
+
+    raw = (message.text or "").strip()
+    kwargs = {}
+    # Field validations/conversions
+    if field in ("max_speakers", "max_participants"):
+        try:
+            value = int(raw)
+            if value <= 0:
+                raise ValueError()
+        except Exception:
+            await message.answer("Пожалуйста, введи положительное целое число:")
+            return
+        kwargs[field] = value
+    elif field == "description":
+        kwargs[field] = None if raw == "-" else raw
+    elif field == "title":
+        if not raw:
+            await message.answer("Название не может быть пустым. Введи значение ещё раз:")
+            return
+        kwargs[field] = raw
+    elif field == "date":
+        # Store as-is
+        kwargs[field] = raw
+    else:
+        # Unknown field
+        await message.answer("Некорректное поле для редактирования.")
+        return
+
+    try:
+        await update_event(event_id, **kwargs)
+    except Exception as e:
+        await message.answer(f"Не удалось обновить поле: {e}")
+        return
+
+    # Return to the edit menu with updated data
+    event = await get_event(event_id)
+    if not event:
+        await state.set_state(AdminState.waiting_for_action)
+        await message.answer("Мероприятие не найдено.", reply_markup=get_admin_keyboard())
+        return
+
+    await state.set_state(AdminEditEventState.waiting_for_field)
+    await message.answer("Готово. Поле обновлено.")
+    await message.answer(_format_event_edit_text(event), reply_markup=get_admin_event_edit_keyboard(event_id))
+
+
+@router.callback_query(AdminEditEventState.waiting_for_field, F.data.startswith("admin_edit_event_status_"))
+async def process_admin_edit_event_status(callback: CallbackQuery, state: FSMContext):
+    """Handle status selection from the status keyboard."""
+    # pattern: admin_edit_event_status_{event_id}_{status}
+    parts = callback.data.split("_")
+    try:
+        event_id = int(parts[4])
+        new_status = parts[5]
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    valid = {"open", "closed", "completed"}
+    if new_status not in valid:
+        await callback.answer("Некорректный статус")
+        return
+
+    await update_event(event_id, status=new_status)
+
+    event = await get_event(event_id)
+    if not event:
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.message.edit_text("Мероприятие не найдено.", reply_markup=get_admin_keyboard())
+        await callback.answer()
+        return
+
+    await state.set_state(AdminEditEventState.waiting_for_field)
+    await callback.message.edit_text(_format_event_edit_text(event), reply_markup=get_admin_event_edit_keyboard(event_id))
+    await callback.answer("Статус обновлён")
+
+
+@router.callback_query(AdminEditEventState.waiting_for_field, F.data.startswith("admin_edit_event_is_test_"))
+async def process_admin_edit_event_is_test(callback: CallbackQuery, state: FSMContext):
+    """Handle is_test yes/no selection."""
+    # pattern: admin_edit_event_is_test_{event_id}_{yes|no}
+    parts = callback.data.split("_")
+    try:
+        event_id = int(parts[4])
+        answer = parts[5]
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    is_test = True if answer == "yes" else False
+    await update_event(event_id, is_test=is_test)
+
+    event = await get_event(event_id)
+    if not event:
+        await state.set_state(AdminState.waiting_for_action)
+        await callback.message.edit_text("Мероприятие не найдено.", reply_markup=get_admin_keyboard())
+        await callback.answer()
+        return
+
+    await state.set_state(AdminEditEventState.waiting_for_field)
+    await callback.message.edit_text(_format_event_edit_text(event), reply_markup=get_admin_event_edit_keyboard(event_id))
+    await callback.answer("Обновлено")
