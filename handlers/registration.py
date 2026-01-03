@@ -504,6 +504,79 @@ async def process_comments(message: Message, state: FSMContext):
         )
         return
 
+    # For speakers, skip payment step and register directly
+    if data.get("role") == ROLE_SPEAKER:
+        try:
+            await register_user(
+                data.get("event_id"),
+                message.from_user.id,
+                data.get("first_name"),
+                data.get("last_name"),
+                data.get("role"),
+                REG_STATUS_ACTIVE,
+                data.get("topic"),
+                data.get("description"),
+                data.get("has_presentation"),
+                data.get("comments"),
+                message.from_user.username
+            )
+
+            # Send confirmation to user
+            await send_registration_confirmation(
+                message.bot,
+                message.from_user.id,
+                data.get("event_id"),
+                data.get("role")
+            )
+
+            # Send notification to admin chat
+            user_info = {
+                "first_name": data.get("first_name"),
+                "last_name": data.get("last_name"),
+                "username": message.from_user.username,
+                "topic": data.get("topic")
+            }
+            await send_admin_notification(
+                message.bot,
+                "registration",
+                data.get("event_id"),
+                user_info,
+                data.get("role")
+            )
+
+            # Clear state
+            await state.clear()
+
+            # Send success message
+            await message.answer(
+                f"Что хочешь сделать?",
+                reply_markup=get_start_keyboard()
+            )
+
+        except Exception as e:
+            # Get data from state for context
+            state_data = await state.get_data()
+
+            # Log the exception with context
+            log_exception(
+                exception=e,
+                context={
+                    "state_data": state_data,
+                    "message_text": message.text
+                },
+                user_id=message.from_user.id if message.from_user else None,
+                event_id=state_data.get("event_id"),
+                message="Error registering speaker"
+            )
+
+            await message.answer(
+                "Произошла ошибка при регистрации. Пожалуйста, попробуй позже.",
+                reply_markup=get_start_keyboard()
+            )
+            await state.clear()
+        return
+
+    # For participants, show payment step
     # Set state to waiting for payment
     await state.set_state(RegistrationState.waiting_for_payment)
 
