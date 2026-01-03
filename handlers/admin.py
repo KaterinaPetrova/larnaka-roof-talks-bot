@@ -61,8 +61,7 @@ from states.states import (
 from utils.text_constants import (
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
-    KEYBOARD_PAYMENT_CONFIRMED,
-    COMMENTS_REQUEST
+    KEYBOARD_PAYMENT_CONFIRMED
 )
 
 # Initialize logger
@@ -1150,11 +1149,17 @@ async def process_admin_add_user_username(message: Message, state: FSMContext):
         # Ask for topic
         await message.answer("Введи тему доклада:")
     else:
-        # Set state to waiting for comments
-        await state.set_state(AdminAddUserState.waiting_for_comments)
+        # For participants, go directly to payment (skip comments)
+        await state.set_state(AdminAddUserState.waiting_for_payment)
 
-        # Ask for comments
-        await message.answer(COMMENTS_REQUEST)
+        # Ask for payment
+        payment_message = PAYMENT_MESSAGE.format(REVOLUT_DONATION_URL)
+
+        await message.answer(
+            payment_message,
+            reply_markup=get_payment_confirmation_keyboard(),
+            parse_mode="HTML"
+        )
 
 # Admin add user topic handler
 @router.message(AdminAddUserState.waiting_for_topic)
@@ -1182,32 +1187,35 @@ async def process_admin_add_user_description(message: Message, state: FSMContext
     # Store description in state data
     await state.update_data(description=description if description != "-" else None)
 
-    # Set state to waiting for presentation
-    await state.set_state(AdminAddUserState.waiting_for_presentation)
+    # Get data from state
+    data = await state.get_data()
+    event_id = data.get("event_id")
+    role = data.get("role")
+    first_name = data.get("first_name")
+    last_name = data.get("last_name")
+    username = data.get("username")
+    topic = data.get("topic")
+    description_value = description if description != "-" else None
 
-    # Ask for presentation
-    await message.answer("Будут ли слайды? (да/нет)")
+    # Set state to confirmation (skip presentation and comments for speakers)
+    await state.set_state(AdminAddUserState.confirmation)
 
-# Admin add user presentation handler
-@router.message(AdminAddUserState.waiting_for_presentation)
-async def process_admin_add_user_presentation(message: Message, state: FSMContext):
-    """Handle admin add user presentation input."""
-    # Get presentation
-    has_presentation = message.text.lower() in ["да", "yes", "y", "+"]
+    # Prepare confirmation message
+    message_text = (
+        f"Ты собираешься добавить нового спикера:\n\n"
+        f"Имя: {first_name}\n"
+        f"Фамилия: {last_name}\n"
+        f"Username: {username or '-'}\n"
+        f"Роль: Спикер\n"
+        f"Тема: {topic}\n"
+        f"Описание: {description_value or '-'}\n\n"
+        f"Подтверждаешь добавление?"
+    )
 
-    # Store presentation in state data
-    await state.update_data(has_presentation=has_presentation)
-
-    # Set state to waiting for payment
-    await state.set_state(AdminAddUserState.waiting_for_payment)
-
-    # Ask for payment
-    payment_message = PAYMENT_MESSAGE.format(REVOLUT_DONATION_URL)
-
+    # Ask for confirmation
     await message.answer(
-        payment_message,
-        reply_markup=get_payment_confirmation_keyboard(),
-        parse_mode="HTML"
+        message_text,
+        reply_markup=get_admin_confirmation_keyboard()
     )
 
 # Admin add user payment confirmation handler
@@ -1224,63 +1232,30 @@ async def process_admin_add_user_payment(message: Message, state: FSMContext):
         )
         return
 
-    # Set state to waiting for comments
-    await state.set_state(AdminAddUserState.waiting_for_comments)
-
-    # Ask for comments
-    await message.answer(COMMENTS_REQUEST)
-
-# Admin add user comments handler
-@router.message(AdminAddUserState.waiting_for_comments)
-async def process_admin_add_user_comments(message: Message, state: FSMContext):
-    """Handle admin add user comments input."""
-    # Get comments
-    comments = message.text
-
-    # Store comments in state data
-    await state.update_data(comments=comments if comments != "-" else None)
-
     # Get data from state
     data = await state.get_data()
-    event_id = data.get("event_id")
-    role = data.get("role")
     first_name = data.get("first_name")
     last_name = data.get("last_name")
     username = data.get("username")
-    topic = data.get("topic")
-    description = data.get("description")
-    has_presentation = data.get("has_presentation", False)
-    comments = data.get("comments")
 
-    # Set state to confirmation
+    # Set state to confirmation (skip comments for participants)
     await state.set_state(AdminAddUserState.confirmation)
 
     # Prepare confirmation message
-    role_text = 'Спикер' if role == 'speaker' else 'Слушатель'
     message_text = (
-        f"Ты собираешься добавить нового {role_text.lower()}а:\n\n"
+        f"Ты собираешься добавить нового слушателя:\n\n"
         f"Имя: {first_name}\n"
         f"Фамилия: {last_name}\n"
         f"Username: {username or '-'}\n"
-        f"Роль: {role_text}\n"
+        f"Роль: Слушатель\n\n"
+        f"Подтверждаешь добавление?"
     )
-
-    if role == "speaker":
-        message_text += (
-            f"Тема: {topic}\n"
-            f"Описание: {description or '-'}\n"
-            f"Презентация: {'Да' if has_presentation else 'Нет'}\n"
-        )
-
-    message_text += f"Комментарии: {comments or '-'}\n\n"
-    message_text += "Подтверждаешь добавление?"
 
     # Ask for confirmation
     await message.answer(
         message_text,
         reply_markup=get_admin_confirmation_keyboard()
     )
-
 
 # Admin slot type selection handler
 @router.callback_query(AdminState.waiting_for_slot_type, F.data.startswith("admin_slot_type_"))

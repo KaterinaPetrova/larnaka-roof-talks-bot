@@ -21,7 +21,6 @@ from database.db import (
 from keyboards.keyboards import (
     get_role_keyboard, 
     get_waitlist_keyboard, 
-    get_presentation_keyboard,
     get_start_keyboard,
     get_events_keyboard,
     get_payment_confirmation_keyboard
@@ -58,8 +57,6 @@ from utils.text_constants import (
     REGISTRATION_EMPTY_TOPIC,
     REGISTRATION_ENTER_DESCRIPTION,
     REGISTRATION_EMPTY_DESCRIPTION,
-    REGISTRATION_ENTER_COMMENTS,
-    COMMENTS_REQUEST,
     PAYMENT_MESSAGE,
     PAYMENT_CONFIRMATION_ERROR,
     KEYBOARD_PAYMENT_CONFIRMED
@@ -211,11 +208,17 @@ async def process_last_name(message: Message, state: FSMContext):
         # Ask for topic
         await message.answer(REGISTRATION_ENTER_TOPIC)
     else:
-        # Set state to waiting for comments
-        await state.set_state(RegistrationState.waiting_for_comments)
+        # For participants, go directly to payment (skip comments)
+        await state.set_state(RegistrationState.waiting_for_payment)
 
-        # Ask for comments
-        await message.answer(COMMENTS_REQUEST)
+        # Ask for payment
+        payment_message = PAYMENT_MESSAGE.format(REVOLUT_DONATION_URL)
+
+        await message.answer(
+            payment_message,
+            reply_markup=get_payment_confirmation_keyboard(),
+            disable_web_page_preview=True
+        )
 
 # Topic handler
 @router.message(RegistrationState.waiting_for_topic)
@@ -251,59 +254,96 @@ async def process_description(message: Message, state: FSMContext):
     # Store description in state data
     await state.update_data(description=description)
 
-    # Set state to waiting for presentation
-    await state.set_state(RegistrationState.waiting_for_presentation)
+    # Get all data from state
+    data = await state.get_data()
 
-    # Ask for presentation
-    await message.answer(
-        "Будешь показывать слайды?",
-        reply_markup=get_presentation_keyboard()
+    # Validate all data
+    is_valid, error_message = await validate_registration_data(
+        data.get("first_name"),
+        data.get("last_name"),
+        data.get("role"),
+        data.get("topic"),
+        description
     )
 
-# Presentation handler (text message)
-@router.message(RegistrationState.waiting_for_presentation)
-async def process_presentation(message: Message, state: FSMContext):
-    """Handle presentation input via text message."""
-    presentation = message.text.strip().lower()
-
-    # Validate presentation
-    if presentation not in ["да", "нет"]:
+    if not is_valid:
+        await message.answer(f"Ошибка: {error_message}")
+        await state.clear()
         await message.answer(
-            "Пожалуйста, выбери 'Да' или 'Нет':",
-            reply_markup=get_presentation_keyboard()
+            "Регистрация отменена. Используй /start, чтобы начать заново.",
+            reply_markup=get_start_keyboard()
         )
         return
 
-    # Store presentation in state data
-    has_presentation = presentation == "да"
-    await state.update_data(has_presentation=has_presentation)
+    # Register speaker directly (no slides or comments questions)
+    try:
+        await register_user(
+            data.get("event_id"),
+            message.from_user.id,
+            data.get("first_name"),
+            data.get("last_name"),
+            data.get("role"),
+            REG_STATUS_ACTIVE,
+            data.get("topic"),
+            description,
+            None,  # has_presentation - not asked anymore
+            None,  # comments - not asked anymore
+            message.from_user.username
+        )
 
-    # Set state to waiting for comments
-    await state.set_state(RegistrationState.waiting_for_comments)
+        # Send confirmation to user
+        await send_registration_confirmation(
+            message.bot,
+            message.from_user.id,
+            data.get("event_id"),
+            data.get("role")
+        )
 
-    # Ask for comments
-    await message.answer(COMMENTS_REQUEST)
+        # Send notification to admin chat
+        user_info = {
+            "first_name": data.get("first_name"),
+            "last_name": data.get("last_name"),
+            "username": message.from_user.username,
+            "topic": data.get("topic")
+        }
+        await send_admin_notification(
+            message.bot,
+            "registration",
+            data.get("event_id"),
+            user_info,
+            data.get("role")
+        )
 
-# Presentation handler (callback query)
-@router.callback_query(RegistrationState.waiting_for_presentation, F.data.startswith("presentation_"))
-async def process_presentation_callback(callback: CallbackQuery, state: FSMContext):
-    """Handle presentation input via callback query."""
-    # Extract response from callback data
-    presentation = callback.data.split("_")[1]
+        # Clear state
+        await state.clear()
 
-    # Store presentation in state data
-    has_presentation = presentation == "yes"
-    await state.update_data(has_presentation=has_presentation)
+        # Send success message
+        await message.answer(
+            f"Что хочешь сделать?",
+            reply_markup=get_start_keyboard()
+        )
 
-    # Set state to waiting for comments
-    await state.set_state(RegistrationState.waiting_for_comments)
+    except Exception as e:
+        # Get data from state for context
+        state_data = await state.get_data()
 
-    # Ask for comments
-    await callback.message.delete()
-    await callback.message.answer(COMMENTS_REQUEST)
+        # Log the exception with context
+        log_exception(
+            exception=e,
+            context={
+                "state_data": state_data,
+                "message_text": message.text
+            },
+            user_id=message.from_user.id if message.from_user else None,
+            event_id=state_data.get("event_id"),
+            message="Error registering speaker"
+        )
 
-    # Answer callback query
-    await callback.answer()
+        await message.answer(
+            "Произошла ошибка при регистрации. Пожалуйста, попробуй позже.",
+            reply_markup=get_start_keyboard()
+        )
+        await state.clear()
 
 # Payment confirmation handler (text message)
 @router.message(RegistrationState.waiting_for_payment)
@@ -474,121 +514,6 @@ async def process_payment_callback(callback: CallbackQuery, state: FSMContext):
     # Answer the callback query to remove the loading indicator
     await callback.answer()
 
-# Comments handler
-@router.message(RegistrationState.waiting_for_comments)
-async def process_comments(message: Message, state: FSMContext):
-    """Handle comments input."""
-    comments = message.text.strip()
-
-    # Store comments in state data
-    await state.update_data(comments=comments if comments else None)
-
-    # Get all data from state
-    data = await state.get_data()
-
-    # Validate all data
-    is_valid, error_message = await validate_registration_data(
-        data.get("first_name"),
-        data.get("last_name"),
-        data.get("role"),
-        data.get("topic"),
-        data.get("description")
-    )
-
-    if not is_valid:
-        await message.answer(f"Ошибка: {error_message}")
-        await state.clear()
-        await message.answer(
-            "Регистрация отменена. Используй /start, чтобы начать заново.",
-            reply_markup=get_start_keyboard()
-        )
-        return
-
-    # For speakers, skip payment step and register directly
-    if data.get("role") == ROLE_SPEAKER:
-        try:
-            await register_user(
-                data.get("event_id"),
-                message.from_user.id,
-                data.get("first_name"),
-                data.get("last_name"),
-                data.get("role"),
-                REG_STATUS_ACTIVE,
-                data.get("topic"),
-                data.get("description"),
-                data.get("has_presentation"),
-                data.get("comments"),
-                message.from_user.username
-            )
-
-            # Send confirmation to user
-            await send_registration_confirmation(
-                message.bot,
-                message.from_user.id,
-                data.get("event_id"),
-                data.get("role")
-            )
-
-            # Send notification to admin chat
-            user_info = {
-                "first_name": data.get("first_name"),
-                "last_name": data.get("last_name"),
-                "username": message.from_user.username,
-                "topic": data.get("topic")
-            }
-            await send_admin_notification(
-                message.bot,
-                "registration",
-                data.get("event_id"),
-                user_info,
-                data.get("role")
-            )
-
-            # Clear state
-            await state.clear()
-
-            # Send success message
-            await message.answer(
-                f"Что хочешь сделать?",
-                reply_markup=get_start_keyboard()
-            )
-
-        except Exception as e:
-            # Get data from state for context
-            state_data = await state.get_data()
-
-            # Log the exception with context
-            log_exception(
-                exception=e,
-                context={
-                    "state_data": state_data,
-                    "message_text": message.text
-                },
-                user_id=message.from_user.id if message.from_user else None,
-                event_id=state_data.get("event_id"),
-                message="Error registering speaker"
-            )
-
-            await message.answer(
-                "Произошла ошибка при регистрации. Пожалуйста, попробуй позже.",
-                reply_markup=get_start_keyboard()
-            )
-            await state.clear()
-        return
-
-    # For participants, show payment step
-    # Set state to waiting for payment
-    await state.set_state(RegistrationState.waiting_for_payment)
-
-    # Ask for payment
-    payment_message = PAYMENT_MESSAGE.format(REVOLUT_DONATION_URL)
-
-    await message.answer(
-        payment_message,
-        reply_markup=get_payment_confirmation_keyboard(),
-        parse_mode="HTML"
-    )
-
 # Waitlist confirmation handler
 @router.callback_query(WaitlistState.waiting_for_confirmation, F.data.startswith("waitlist_yes_"))
 async def process_waitlist_confirmation(callback: CallbackQuery, state: FSMContext):
@@ -668,11 +593,75 @@ async def process_waitlist_last_name(message: Message, state: FSMContext):
         # Ask for topic
         await message.answer("Введи тему доклада:")
     else:
-        # Skip payment for waitlist and go directly to comments
-        await state.set_state(WaitlistState.waiting_for_comments)
+        # For participants, add to waitlist directly (no comments)
+        try:
+            await add_to_waitlist(
+                data.get("event_id"),
+                message.from_user.id,
+                data.get("first_name"),
+                last_name,
+                role,
+                REG_STATUS_ACTIVE,
+                None,  # topic - not applicable for participants
+                None,  # description - not applicable for participants
+                None,  # has_presentation - not asked anymore
+                None,  # comments - not asked anymore
+                message.from_user.username
+            )
 
-        # Ask for comments
-        await message.answer(COMMENTS_REQUEST)
+            # Send confirmation to user
+            await send_waitlist_confirmation(
+                message.bot,
+                message.from_user.id,
+                data.get("event_id"),
+                role
+            )
+
+            # Send notification to admin chat
+            user_info = {
+                "first_name": data.get("first_name"),
+                "last_name": last_name,
+                "username": message.from_user.username,
+                "topic": None
+            }
+            await send_admin_notification(
+                message.bot,
+                "waitlist",
+                data.get("event_id"),
+                user_info,
+                role
+            )
+
+            # Clear state
+            await state.clear()
+
+            # Send success message
+            await message.answer(
+                f"Что хочешь сделать?",
+                reply_markup=get_start_keyboard()
+            )
+
+        except Exception as e:
+            # Get data from state for context
+            state_data = await state.get_data()
+
+            # Log the exception with context
+            log_exception(
+                exception=e,
+                context={
+                    "state_data": state_data,
+                    "message_text": message.text
+                },
+                user_id=message.from_user.id if message.from_user else None,
+                event_id=state_data.get("event_id"),
+                message="Error adding participant to waitlist"
+            )
+
+            await message.answer(
+                "Произошла ошибка при добавлении в список ожидания. Пожалуйста, попробуй позже.",
+                reply_markup=get_start_keyboard()
+            )
+            await state.clear()
 
 # Waitlist topic handler
 @router.message(WaitlistState.waiting_for_topic)
@@ -708,70 +697,6 @@ async def process_waitlist_description(message: Message, state: FSMContext):
     # Store description in state data
     await state.update_data(description=description)
 
-    # Set state to waiting for presentation
-    await state.set_state(WaitlistState.waiting_for_presentation)
-
-    # Ask for presentation
-    await message.answer(
-        "Будет ли презентация?",
-        reply_markup=get_presentation_keyboard()
-    )
-
-# Waitlist presentation handler (text message)
-@router.message(WaitlistState.waiting_for_presentation)
-async def process_waitlist_presentation(message: Message, state: FSMContext):
-    """Handle waitlist presentation input via text message."""
-    presentation = message.text.strip().lower()
-
-    # Validate presentation
-    if presentation not in ["да", "нет"]:
-        await message.answer(
-            "Пожалуйста, выбери 'Да' или 'Нет':",
-            reply_markup=get_presentation_keyboard()
-        )
-        return
-
-    # Store presentation in state data
-    has_presentation = presentation == "да"
-    await state.update_data(has_presentation=has_presentation)
-
-    # Skip payment for waitlist and go directly to comments
-    await state.set_state(WaitlistState.waiting_for_comments)
-
-    # Ask for comments
-    await message.answer(COMMENTS_REQUEST)
-
-# Waitlist presentation handler (callback query)
-@router.callback_query(WaitlistState.waiting_for_presentation, F.data.startswith("presentation_"))
-async def process_waitlist_presentation_callback(callback: CallbackQuery, state: FSMContext):
-    """Handle waitlist presentation input via callback query."""
-    # Extract response from callback data
-    presentation = callback.data.split("_")[1]
-
-    # Store presentation in state data
-    has_presentation = presentation == "yes"
-    await state.update_data(has_presentation=has_presentation)
-
-    # Skip payment for waitlist and go directly to comments
-    await state.set_state(WaitlistState.waiting_for_comments)
-
-    # Ask for comments
-    await callback.message.delete()
-    await callback.message.answer(COMMENTS_REQUEST)
-
-    # Answer callback query
-    await callback.answer()
-
-
-# Waitlist comments handler
-@router.message(WaitlistState.waiting_for_comments)
-async def process_waitlist_comments(message: Message, state: FSMContext):
-    """Handle waitlist comments input."""
-    comments = message.text.strip()
-
-    # Store comments in state data
-    await state.update_data(comments=comments if comments else None)
-
     # Get all data from state
     data = await state.get_data()
 
@@ -781,7 +706,7 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
         data.get("last_name"),
         data.get("role"),
         data.get("topic"),
-        data.get("description")
+        description
     )
 
     if not is_valid:
@@ -793,8 +718,7 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
         )
         return
 
-
-    # Add to waitlist
+    # Add to waitlist directly (no slides or comments questions)
     try:
         await add_to_waitlist(
             data.get("event_id"),
@@ -804,9 +728,9 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
             data.get("role"),
             REG_STATUS_ACTIVE,
             data.get("topic"),
-            data.get("description"),
-            data.get("has_presentation"),
-            data.get("comments"),
+            description,
+            None,  # has_presentation - not asked anymore
+            None,  # comments - not asked anymore
             message.from_user.username
         )
 
@@ -835,6 +759,12 @@ async def process_waitlist_comments(message: Message, state: FSMContext):
 
         # Clear state
         await state.clear()
+
+        # Send success message
+        await message.answer(
+            f"Что хочешь сделать?",
+            reply_markup=get_start_keyboard()
+        )
 
     except Exception as e:
         # Get data from state for context

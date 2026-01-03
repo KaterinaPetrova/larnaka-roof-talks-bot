@@ -12,9 +12,7 @@ class RegistrationState(StatesGroup):
     waiting_for_last_name = State()
     waiting_for_topic = State()
     waiting_for_description = State()
-    waiting_for_presentation = State()
     waiting_for_payment = State()
-    waiting_for_comments = State()
     confirmation = State()
 
 class WaitlistState(StatesGroup):
@@ -24,8 +22,6 @@ class WaitlistState(StatesGroup):
     waiting_for_last_name = State()
     waiting_for_topic = State()
     waiting_for_description = State()
-    waiting_for_presentation = State()
-    waiting_for_comments = State()
     confirmation = State()
 
 class MyEventsState(StatesGroup):
@@ -65,9 +61,7 @@ class AdminAddUserState(StatesGroup):
     waiting_for_username = State()
     waiting_for_topic = State()
     waiting_for_description = State()
-    waiting_for_presentation = State()
     waiting_for_payment = State()
-    waiting_for_comments = State()
     confirmation = State()
 
 class WaitlistNotificationState(StatesGroup):
