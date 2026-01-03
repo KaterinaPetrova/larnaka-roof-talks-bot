@@ -217,7 +217,8 @@ async def process_last_name(message: Message, state: FSMContext):
         await message.answer(
             payment_message,
             reply_markup=get_payment_confirmation_keyboard(),
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode="HTML"
         )
 
 # Topic handler
