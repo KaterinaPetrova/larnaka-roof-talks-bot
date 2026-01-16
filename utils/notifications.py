@@ -380,3 +380,139 @@ async def send_admin_notification(bot: Bot, notification_type: str, event_id: in
             event_id=event_id,
             message="Failed to send admin notification"
         )
+
+
+async def process_waitlist_manually(bot: Bot):
+    """Manually process waitlist: update expired entries and send notifications to all open events.
+
+    This function is called by admin to:
+    1. Check and update expired waitlist notifications (status 'notified' -> 'expired')
+    2. Check all open events for available spots and send notifications to waitlist users
+
+    Returns:
+        dict: Summary with counts of expired processed and notified users
+    """
+    from database.db import (
+        get_expired_waitlist_notifications,
+        update_expired_waitlist_entry,
+        get_available_spots,
+        get_event_waitlist,
+        count_notified_waitlist_users,
+        get_open_events
+    )
+    from config import WAITLIST_TIMEOUT_HOURS, ROLE_SPEAKER, ROLE_PARTICIPANT
+    from datetime import datetime, timedelta
+    from utils.text_constants import WAITLIST_EXPIRED_MESSAGE
+
+    logger = logging.getLogger(__name__)
+
+    logger.warning(f"Starting manual waitlist processing at {datetime.now().isoformat()}")
+
+    result = {
+        "expired_processed": 0,
+        "notified_users": 0,
+        "events_processed": 0,
+        "errors": []
+    }
+
+    try:
+        # Step 1: Process expired waitlist notifications
+        expiration_time = (datetime.now() - timedelta(hours=WAITLIST_TIMEOUT_HOURS)).isoformat()
+        logger.warning(f"Checking for waitlist notifications that expired before {expiration_time}")
+
+        expired_entries = await get_expired_waitlist_notifications(expiration_time)
+        logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
+
+        for entry in expired_entries:
+            success = await update_expired_waitlist_entry(entry["id"])
+            if not success:
+                logger.error(f"Failed to update waitlist entry {entry['id']} to expired")
+                result["errors"].append(f"Failed to expire entry {entry['id']}")
+                continue
+
+            # Send expiration notification to the user
+            try:
+                await bot.send_message(entry["user_id"], WAITLIST_EXPIRED_MESSAGE)
+                logger.warning(f"Sent expiration notification to user {entry['user_id']} for event {entry['event_id']}")
+            except Exception as e:
+                logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
+                result["errors"].append(f"Failed to notify user {entry['user_id']} about expiration")
+
+            result["expired_processed"] += 1
+
+        # Step 2: Process ALL open events for available spots
+        events = await get_open_events()
+        logger.warning(f"Found {len(events)} open events to process")
+
+        roles = [ROLE_SPEAKER, ROLE_PARTICIPANT]
+
+        for event in events:
+            event_id = event["id"]
+            result["events_processed"] += 1
+
+            for role in roles:
+                # Check how many spots are available
+                available_spots = await get_available_spots(event_id, role)
+
+                if available_spots <= 0:
+                    logger.warning(f"No available spots for event {event_id} with role {role}")
+                    continue
+
+                # Get count of already notified users
+                already_notified_count = await count_notified_waitlist_users(event_id, role)
+
+                # Calculate actual available spots considering already notified users
+                actual_available_spots = max(0, available_spots - already_notified_count)
+
+                logger.warning(f"Event {event_id} role {role}: {available_spots} available spots, "
+                              f"{already_notified_count} already notified, "
+                              f"{actual_available_spots} actual available")
+
+                if actual_available_spots <= 0:
+                    logger.warning(f"No actual available spots for event {event_id} with role {role} after considering notified users")
+                    continue
+
+                # Get users from waitlist for this event and role
+                waitlist_entries = await get_event_waitlist(event_id, role)
+
+                # Notify up to actual_available_spots users
+                notified_count = 0
+                for entry in waitlist_entries:
+                    if notified_count >= actual_available_spots:
+                        break
+
+                    # Only notify users with 'active' status
+                    if entry["status"] != "active":
+                        continue
+
+                    # Send notification to the user
+                    try:
+                        await send_waitlist_notification(
+                            bot,
+                            entry["user_id"],
+                            entry["id"],
+                            entry["event_id"],
+                            entry["role"]
+                        )
+                        logger.warning(f"Notified user {entry['user_id']} from waitlist for event {entry['event_id']} with role {entry['role']}")
+                        notified_count += 1
+                        result["notified_users"] += 1
+                    except Exception as e:
+                        logger.error(f"Failed to send waitlist notification to user {entry['user_id']}: {str(e)}")
+                        result["errors"].append(f"Failed to notify user {entry['user_id']}")
+
+                logger.warning(f"Notified {notified_count} users from waitlist for event {event_id} with role {role}")
+
+        logger.warning(f"Manual waitlist processing completed. Expired: {result['expired_processed']}, Notified: {result['notified_users']}")
+        return result
+
+    except Exception as e:
+        log_exception(
+            exception=e,
+            context={
+                "expiration_time": expiration_time if 'expiration_time' in locals() else None
+            },
+            message="Error during manual waitlist processing"
+        )
+        result["errors"].append(f"General error: {str(e)}")
+        return result

@@ -736,3 +736,23 @@ async def get_event_statistics(event_id):
                 "waitlist": waitlist_participants
             }
         }
+
+async def get_all_waitlist_entries():
+    """Get all waitlist entries with event information for admin view.
+
+    Returns:
+        list: List of waitlist entries with event title and date
+    """
+    logger = logging.getLogger(__name__)
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            '''SELECT w.*, e.title as event_title, e.date as event_date 
+               FROM waitlist w 
+               JOIN events e ON w.event_id = e.id 
+               WHERE w.status IN ('active', 'notified')
+               ORDER BY e.date, w.role, w.added_at'''
+        )
+        result = await cursor.fetchall()
+        logger.warning(f"Retrieved {len(result)} waitlist entries for admin view")
+        return result

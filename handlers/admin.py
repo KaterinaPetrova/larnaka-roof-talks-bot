@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from config import BOT_TOKEN, REVOLUT_DONATION_URL, DB_NAME, BACKUP_CHAT_ID
 from utils import log_exception
-from utils.notifications import send_admin_notification
+from utils.notifications import send_admin_notification, process_waitlist_manually
 from utils.validation import has_available_slots
 from utils.validation_helpers import (
     validate_waitlist_entry,
@@ -31,7 +31,8 @@ from database.db import (
     get_event,
     update_registration,
     create_event,
-    update_event
+    update_event,
+    get_all_waitlist_entries
 )
 from keyboards.keyboards import (
     get_admin_keyboard,
@@ -1956,6 +1957,163 @@ async def process_admin_export_db(callback: CallbackQuery, state: FSMContext):
         )
 
     await callback.answer()
+
+
+# Process waitlist handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_process_waitlist")
+async def process_admin_waitlist(callback: CallbackQuery, state: FSMContext):
+    """Handle process waitlist button click."""
+    user_id = callback.from_user.id
+
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await callback.message.answer("У тебя нет прав администратора.")
+        await callback.answer()
+        return
+
+    try:
+        # Show processing message
+        await callback.message.edit_text("⏳ Обрабатываю вейт-лист...")
+
+        # Process waitlist manually
+        result = await process_waitlist_manually(bot)
+
+        # Format result message
+        message_lines = [
+            "✅ Обработка вейт-листа завершена!\n",
+            f"📊 Обработано мероприятий: {result['events_processed']}",
+            f"⏰ Истекших приглашений обновлено: {result['expired_processed']}",
+            f"📨 Уведомлений отправлено: {result['notified_users']}"
+        ]
+
+        if result['errors']:
+            message_lines.append(f"\n⚠️ Ошибки ({len(result['errors'])}):")
+            # Show first 5 errors
+            for error in result['errors'][:5]:
+                message_lines.append(f"  • {error}")
+            if len(result['errors']) > 5:
+                message_lines.append(f"  ... и ещё {len(result['errors']) - 5}")
+
+        await callback.message.edit_text(
+            "\n".join(message_lines),
+            reply_markup=get_admin_keyboard()
+        )
+
+        # Log the action
+        logger.warning(f"Waitlist processed manually by admin {user_id}: {result}")
+
+    except Exception as e:
+        # Log the error
+        log_exception(
+            exception=e,
+            context={"action": "process_waitlist"},
+            user_id=user_id,
+            message="Error processing waitlist"
+        )
+
+        # Send error message
+        await callback.message.edit_text(
+            "❌ Произошла ошибка при обработке вейт-листа. Попробуй ещё раз позже.",
+            reply_markup=get_admin_keyboard()
+        )
+
+    await callback.answer()
+
+
+# View waitlist handler
+@router.callback_query(AdminState.waiting_for_action, F.data == "admin_view_waitlist")
+async def process_admin_view_waitlist(callback: CallbackQuery, state: FSMContext):
+    """Handle view waitlist button click."""
+    user_id = callback.from_user.id
+
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await callback.message.answer("У тебя нет прав администратора.")
+        await callback.answer()
+        return
+
+    try:
+        # Get all waitlist entries
+        entries = await get_all_waitlist_entries()
+
+        if not entries:
+            await callback.message.edit_text(
+                "📋 Вейт-лист пуст.\n\nНет активных или ожидающих ответа записей.",
+                reply_markup=get_admin_keyboard()
+            )
+            await callback.answer()
+            return
+
+        # Group entries by event
+        events_data = {}
+        for entry in entries:
+            event_key = (entry["event_id"], entry["event_title"], entry["event_date"])
+            if event_key not in events_data:
+                events_data[event_key] = []
+            events_data[event_key].append(entry)
+
+        # Format message
+        message_lines = ["📋 Вейт-лист:\n"]
+
+        for (event_id, event_title, event_date), event_entries in events_data.items():
+            message_lines.append(f"📆 {event_title} — {event_date}")
+            
+            for entry in event_entries:
+                role_emoji = "🎤" if entry["role"] == "speaker" else "🙋"
+                status_emoji = "⏳" if entry["status"] == "active" else "📨"
+                status_text = "ожидает" if entry["status"] == "active" else "уведомлён"
+                
+                user_name = f"{entry['first_name']} {entry['last_name']}"
+                username_display = f" (@{entry['username']})" if entry.get('username') else ""
+                
+                line = f"  {role_emoji} {user_name}{username_display}"
+                line += f"\n     {status_emoji} Статус: {status_text}"
+                
+                # Add added_at time
+                if entry.get("added_at"):
+                    added_at = entry["added_at"][:16].replace("T", " ")  # Format: YYYY-MM-DD HH:MM
+                    line += f"\n     📅 Добавлен: {added_at}"
+                
+                # Add notified_at time if exists
+                if entry.get("notified_at"):
+                    notified_at = entry["notified_at"][:16].replace("T", " ")
+                    line += f"\n     🔔 Уведомлён: {notified_at}"
+                
+                message_lines.append(line)
+            
+            message_lines.append("")  # Empty line between events
+
+        # Check if message is too long for Telegram (4096 chars limit)
+        full_message = "\n".join(message_lines)
+        if len(full_message) > 4000:
+            # Truncate and add note
+            full_message = full_message[:3900] + "\n\n... (сообщение обрезано, всего записей: " + str(len(entries)) + ")"
+
+        await callback.message.edit_text(
+            full_message,
+            reply_markup=get_admin_keyboard()
+        )
+
+        # Log the action
+        logger.warning(f"Waitlist viewed by admin {user_id}: {len(entries)} entries")
+
+    except Exception as e:
+        # Log the error
+        log_exception(
+            exception=e,
+            context={"action": "view_waitlist"},
+            user_id=user_id,
+            message="Error viewing waitlist"
+        )
+
+        # Send error message
+        await callback.message.edit_text(
+            "❌ Произошла ошибка при загрузке вейт-листа. Попробуй ещё раз позже.",
+            reply_markup=get_admin_keyboard()
+        )
+
+    await callback.answer()
+
 
 # Automatic database export function
 async def export_database_auto():

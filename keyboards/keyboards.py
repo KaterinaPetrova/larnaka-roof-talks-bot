@@ -198,6 +198,8 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="✏️ Редактировать доклад", callback_data="admin_edit_talk")],
         [InlineKeyboardButton(text="🔄 Изменить количество мест", callback_data="admin_change_slots")],
         [InlineKeyboardButton(text="📈 Посмотреть статистику", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="📋 Вейт-лист", callback_data="admin_view_waitlist")],
+        [InlineKeyboardButton(text="⏱️ Обработать вейт-лист", callback_data="admin_process_waitlist")],
         [InlineKeyboardButton(text="💾 Выгрузить базу данных", callback_data="admin_export_db")],
         [InlineKeyboardButton(text="👑 Добавить администратора", callback_data="admin_add_admin")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
