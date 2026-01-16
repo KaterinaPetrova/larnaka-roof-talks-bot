@@ -108,6 +108,19 @@ async def migrate_db():
         else:
             logger.info("username column already exists in registrations table")
 
+        # Check if chat_link column exists in events table
+        cursor = await db.execute("PRAGMA table_info(events)")
+        columns = await cursor.fetchall()
+        column_names = [column[1] for column in columns]
+
+        # Add chat_link column if it doesn't exist
+        if 'chat_link' not in column_names:
+            await db.execute("ALTER TABLE events ADD COLUMN chat_link TEXT")
+            await db.commit()
+            logger.info("Added chat_link column to events table")
+        else:
+            logger.info("chat_link column already exists in events table")
+
         # Check if username column exists in waitlist table
         cursor = await db.execute("PRAGMA table_info(waitlist)")
         columns = await cursor.fetchall()
@@ -219,7 +232,7 @@ async def update_event_slots(event_id, max_speakers=None, max_participants=None)
         logger.info(f"Updated slots for event {event_id}: speakers={max_speakers}, participants={max_participants}")
         return True
 
-async def update_event(event_id, title=None, date=None, description=None, status=None, is_test=None, max_speakers=None, max_participants=None):
+async def update_event(event_id, title=None, date=None, description=None, status=None, is_test=None, max_speakers=None, max_participants=None, chat_link=None):
     """Update event fields dynamically based on provided arguments."""
     async with aiosqlite.connect(DB_NAME) as db:
         fields = []
@@ -247,6 +260,9 @@ async def update_event(event_id, title=None, date=None, description=None, status
         if max_participants is not None:
             fields.append("max_participants = ?")
             values.append(int(max_participants))
+        if chat_link is not None:
+            fields.append("chat_link = ?")
+            values.append(chat_link if chat_link != "-" else None)
 
         if not fields:
             logger.info("No fields to update for event %s", event_id)

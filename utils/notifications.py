@@ -28,12 +28,24 @@ async def send_registration_confirmation(bot: Bot, user_id: int, event_id: int, 
             f"Мы напомним тебе ближе к дате.\n"
             f"До встречи на крыше!"
         )
+        # Add chat link if available
+        try:
+            if event['chat_link']:
+                message += f"\n\n💬 Ссылка на чат мероприятия: {event['chat_link']}"
+        except (KeyError, TypeError, IndexError):
+            pass
     else:
         message = (
             f"Ты в списке слушателей! 🔥\n"
             f"Мероприятие: {event['title']} — {event['date']}\n"
             f"Приходи, будет интересно!"
         )
+        # Add chat link if available
+        try:
+            if event['chat_link']:
+                message += f"\n\n💬 Ссылка на чат мероприятия: {event['chat_link']}"
+        except (KeyError, TypeError, IndexError):
+            pass
 
     try:
         await bot.send_message(user_id, message)

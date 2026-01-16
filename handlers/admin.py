@@ -2323,6 +2323,10 @@ def _format_event_edit_text(event_row) -> str:
         is_test_value = bool(event_row["is_test"])
     except (KeyError, IndexError, TypeError):
         is_test_value = False
+    try:
+        chat_link_value = event_row["chat_link"] if event_row["chat_link"] else "не задана"
+    except (KeyError, IndexError, TypeError):
+        chat_link_value = "не задана"
     return (
         "Редактирование мероприятия:\n\n"
         f"📌 {event_row['title']}\n"
@@ -2331,7 +2335,8 @@ def _format_event_edit_text(event_row) -> str:
         f"🎤 Места спикеров: {event_row['max_speakers']}\n"
         f"🙋‍♀️ Места слушателей: {event_row['max_participants']}\n"
         f"🚦 Статус: {event_row['status']}\n"
-        f"🧪 Тестовое: {'да' if is_test_value else 'нет'}\n\n"
+        f"🧪 Тестовое: {'да' if is_test_value else 'нет'}\n"
+        f"💬 Ссылка на чат: {chat_link_value}\n\n"
         "Что хочешь изменить?"
     )
 
@@ -2393,6 +2398,7 @@ async def process_admin_edit_event_field(callback: CallbackQuery, state: FSMCont
         "description": "Введи новое описание (или '-' чтобы очистить):",
         "max_speakers": "Введи новое количество мест для спикеров (целое число):",
         "max_participants": "Введи новое количество мест для слушателей (целое число):",
+        "chat_link": "Введи ссылку на чат (или '-' чтобы удалить):",
     }
     await callback.message.edit_text(prompts.get(field, "Введи новое значение:"))
     await callback.answer()
@@ -2431,6 +2437,9 @@ async def process_admin_edit_event_value(message: Message, state: FSMContext):
     elif field == "date":
         # Store as-is
         kwargs[field] = raw
+    elif field == "chat_link":
+        # Store as-is, or None if '-'
+        kwargs[field] = None if raw == "-" else raw
     else:
         # Unknown field
         await message.answer("Некорректное поле для редактирования.")

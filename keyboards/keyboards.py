@@ -306,6 +306,7 @@ def get_admin_event_edit_keyboard(event_id: int):
         [InlineKeyboardButton(text="🙋‍♀️ Места слушателей", callback_data=f"admin_edit_event_field_{event_id}_max_participants")],
         [InlineKeyboardButton(text="🚦 Статус", callback_data=f"admin_edit_event_field_{event_id}_status")],
         [InlineKeyboardButton(text="🧪 Тестовое", callback_data=f"admin_edit_event_field_{event_id}_is_test")],
+        [InlineKeyboardButton(text="💬 Ссылка на чат", callback_data=f"admin_edit_event_field_{event_id}_chat_link")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin_events")]
     ])
     return keyboard
