@@ -189,7 +189,7 @@ async def check_expired_waitlist_notifications(bot: Bot):
     """Check for expired waitlist notifications and update their status.
 
     First, process all expired waitlist entries by updating their status and sending notifications.
-    Then, check for available spots in each event/role and notify users from the waitlist.
+    Then, check for available spots in ALL open events and notify users from the waitlist.
     """
     from database.db import (
         get_expired_waitlist_notifications, 
@@ -197,17 +197,18 @@ async def check_expired_waitlist_notifications(bot: Bot):
         get_available_spots,
         get_next_from_waitlist,
         get_event_waitlist,
-        count_notified_waitlist_users
+        count_notified_waitlist_users,
+        get_open_events
     )
-    from config import WAITLIST_TIMEOUT_HOURS
+    from config import WAITLIST_TIMEOUT_HOURS, ROLE_SPEAKER, ROLE_PARTICIPANT
     from datetime import datetime, timedelta
     from utils.text_constants import WAITLIST_EXPIRED_MESSAGE
-    from collections import defaultdict
 
     logger = logging.getLogger(__name__)
 
     logger.warning(f"Starting waitlist scheduler check at {datetime.now().isoformat()}")
     processed_count = 0
+    notified_total = 0
 
     try:
         # Calculate the expiration time
@@ -217,9 +218,6 @@ async def check_expired_waitlist_notifications(bot: Bot):
         # Step 1: Get all expired waitlist entries
         expired_entries = await get_expired_waitlist_notifications(expiration_time)
         logger.warning(f"Found {len(expired_entries)} expired waitlist notifications")
-
-        # Track events and roles that had expirations
-        affected_events = defaultdict(set)
 
         # Step 2: Process each expired entry
         for entry in expired_entries:
@@ -236,20 +234,23 @@ async def check_expired_waitlist_notifications(bot: Bot):
             except Exception as e:
                 logger.error(f"Failed to send expiration notification to user {entry['user_id']}: {str(e)}")
 
-            # Track this event/role combination for later processing
-            affected_events[entry["event_id"]].add(entry["role"])
-
             logger.warning(f"Expired waitlist entry {entry['id']} for user {entry['user_id']} and event {entry['event_id']}")
             processed_count += 1
 
-        # Step 3: For each affected event/role, check available spots and notify waitlisted users
-        for event_id, roles in affected_events.items():
+        # Step 3: Check ALL open events for available spots and notify waitlisted users
+        events = await get_open_events()
+        logger.warning(f"Checking {len(events)} open events for available waitlist spots")
+        
+        roles = [ROLE_SPEAKER, ROLE_PARTICIPANT]
+
+        for event in events:
+            event_id = event["id"]
+            
             for role in roles:
                 # Check how many spots are available
                 available_spots = await get_available_spots(event_id, role)
 
                 if available_spots <= 0:
-                    logger.warning(f"No available spots for event {event_id} with role {role}")
                     continue
 
                 # Get count of already notified users
@@ -258,12 +259,11 @@ async def check_expired_waitlist_notifications(bot: Bot):
                 # Calculate actual available spots considering already notified users
                 actual_available_spots = max(0, available_spots - already_notified_count)
 
-                logger.warning(f"Found {available_spots} available spots for event {event_id} with role {role}, "
-                              f"with {already_notified_count} already notified users. "
-                              f"Actual available spots: {actual_available_spots}")
+                logger.warning(f"Event {event_id} role {role}: {available_spots} available spots, "
+                              f"{already_notified_count} already notified, "
+                              f"{actual_available_spots} actual available")
 
                 if actual_available_spots <= 0:
-                    logger.warning(f"No actual available spots for event {event_id} with role {role} after considering notified users")
                     continue
 
                 # Get users from waitlist for this event and role
@@ -290,12 +290,14 @@ async def check_expired_waitlist_notifications(bot: Bot):
                         )
                         logger.warning(f"Notified user {entry['user_id']} from waitlist for event {entry['event_id']} with role {entry['role']}")
                         notified_count += 1
+                        notified_total += 1
                     except Exception as e:
                         logger.error(f"Failed to send waitlist notification to user {entry['user_id']}: {str(e)}")
 
-                logger.warning(f"Notified {notified_count} users from waitlist for event {event_id} with role {role} (out of {actual_available_spots} actual available spots)")
+                if notified_count > 0:
+                    logger.warning(f"Notified {notified_count} users from waitlist for event {event_id} with role {role}")
 
-        logger.warning(f"Waitlist scheduler check completed. Processed {processed_count} expired notifications.")
+        logger.warning(f"Waitlist scheduler check completed. Processed {processed_count} expired notifications, notified {notified_total} users from waitlist.")
         return processed_count
     except Exception as e:
         log_exception(
