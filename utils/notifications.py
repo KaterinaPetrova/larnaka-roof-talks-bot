@@ -154,7 +154,7 @@ async def send_talk_update_confirmation(bot: Bot, user_id: int, registration_id:
                 "field": field
             },
             user_id=user_id,
-            event_id=registration.get("event_id") if registration else None,
+            event_id=registration["event_id"] if registration else None,
             message="Failed to send talk update confirmation"
         )
 

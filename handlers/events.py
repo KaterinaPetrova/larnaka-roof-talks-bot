@@ -785,7 +785,7 @@ async def process_confirm_cancel(callback: CallbackQuery, state: FSMContext):
                 "registration": registration
             },
             user_id=callback.from_user.id if callback.from_user else None,
-            event_id=registration.get("event_id") if registration else None,
+            event_id=registration["event_id"] if registration else None,
             message="Error cancelling registration"
         )
 

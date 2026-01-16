@@ -574,7 +574,7 @@ async def process_admin_confirmation(callback: CallbackQuery, state: FSMContext)
                         "state_data": state_data
                     },
                     user_id=callback.from_user.id if callback.from_user else None,
-                    event_id=registration.get("event_id") if registration else None,
+                    event_id=registration["event_id"] if registration else None,
                     message="Failed to remove user"
                 )
 
@@ -2064,18 +2064,18 @@ async def process_admin_view_waitlist(callback: CallbackQuery, state: FSMContext
                 status_text = "ожидает" if entry["status"] == "active" else "уведомлён"
                 
                 user_name = f"{entry['first_name']} {entry['last_name']}"
-                username_display = f" (@{entry['username']})" if entry.get('username') else ""
+                username_display = f" (@{entry['username']})" if entry['username'] else ""
                 
                 line = f"  {role_emoji} {user_name}{username_display}"
                 line += f"\n     {status_emoji} Статус: {status_text}"
                 
                 # Add added_at time
-                if entry.get("added_at"):
+                if entry["added_at"]:
                     added_at = entry["added_at"][:16].replace("T", " ")  # Format: YYYY-MM-DD HH:MM
                     line += f"\n     📅 Добавлен: {added_at}"
                 
                 # Add notified_at time if exists
-                if entry.get("notified_at"):
+                if entry["notified_at"]:
                     notified_at = entry["notified_at"][:16].replace("T", " ")
                     line += f"\n     🔔 Уведомлён: {notified_at}"
                 
