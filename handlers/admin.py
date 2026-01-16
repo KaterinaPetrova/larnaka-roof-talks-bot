@@ -2346,9 +2346,10 @@ async def process_admin_edit_event_field(callback: CallbackQuery, state: FSMCont
     """Handle clicking on a particular field in the event edit menu."""
     parts = callback.data.split("_")
     # pattern: admin_edit_event_field_{event_id}_{field}
+    # field may contain underscores (e.g., chat_link, max_speakers), so join all parts after index 5
     try:
         event_id = int(parts[4])
-        field = parts[5]
+        field = "_".join(parts[5:])
     except (ValueError, IndexError):
         await callback.answer()
         return
